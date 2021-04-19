@@ -41,3 +41,11 @@ class Tier:
 
     def __len__(self):
         return len(self.intervals)
+
+
+class Annotation:
+    """Represents entire annotation."""
+
+    def __init__(self, tiers, duration: float):
+        self.tiers = tiers
+        self.duration = duration

@@ -82,21 +82,36 @@ class Annotation:
 
     @classmethod
     def from_eaf(cls, contents):
-        """Creates annotation from .eaf contents."""
+        """Creates annotation from .eaf file contents."""
 
         ann_doc = contents.getroot()
         duration = cls.get_duration(ann_doc)
 
         align_anns = ann_doc.findall('.//ALIGNABLE_ANNOTATION')
-        ann_doc = cls.set_align_ann_times(ann_doc, align_anns)
-        ann_doc = cls.set_ref_ann_times(ann_doc, align_anns)
+        ann_doc = cls.insert_align_ann_times(ann_doc, align_anns)
+        ann_doc = cls.insert_ref_ann_times(ann_doc, align_anns)
 
         tiers = cls.get_tiers(ann_doc)
 
         return cls(tiers, duration)
 
+    @classmethod
+    def from_trs(cls, contents):
+        """Creates annotation from .trs file contents."""
+
+        trans = contents.getroot()
+        # insert sections topics
+        # insert turns speakers
+        # get sections
+        # get turns
+        # get transcription & background
+        # set_ends(transcription)
+        # set_ends(background)
+        # create Tiers from lists above
+        # create Annotation from tiers & duration
+
     @staticmethod
-    def set_ref_ann_times(root, annotations) -> ET.Element:
+    def insert_ref_ann_times(root, annotations) -> ET.Element:
         """Assigns time boundaries to referring annotations."""
 
         for ann in annotations:
@@ -116,7 +131,7 @@ class Annotation:
                         ref_time += ref_len
                         ref.set("TIME_SLOT_REF2", ref_time)
 
-                    set_ref_ann_times(root, ref_anns)
+                    insert_ref_ann_times(root, ref_anns)
 
         return root
 
@@ -138,8 +153,8 @@ class Annotation:
         return duration
 
     @staticmethod
-    def set_align_ann_times(root, annotations) -> ET.Element:
-        """Replaces alignable annotations' time references with times."""
+    def insert_align_ann_times(root, annotations) -> ET.Element:
+        """Replaces .eaf alignable annotations' time references with times."""
 
         for ann in annotations:
             for slot in root.find('TIME_ORDER'):
@@ -158,17 +173,128 @@ class Annotation:
 
         tiers = []
         for t in root.findall('TIER'):
+            name = t.get('TIER_ID')
             intervals = []
 
             for ann in t.findall('ANNOTATION/*'):
-                intervals.append(
-                    Interval(ann.get('TIME_SLOT_REF1'),
-                             ann.get('TIME_SLOT_REF1'),
-                             ann.find("*").text)
-                )
-            tiers.append(Tier(t.get('TIER_ID'), intervals))
+                start = ann.get('TIME_SLOT_REF1')
+                end = ann.get('TIME_SLOT_REF2')
+                text = ann.find("*").text
+
+                intervals.append(Interval(start, end, text))
+
+            tiers.append(Tier(name, intervals))
 
         return tiers
+
+    @staticmethod
+    def insert_topics(root) -> ET.Element:
+        """Sets sections' topics to descriptions in .trs file root."""
+
+        if root.find('Topics'):
+            for sect in trans.iter('Section'):
+                for topic in root.find('Topics'):
+                    if sect.get('topic') == topic.get('id'):
+                        sect.set('topic', topic.get('desc'))
+
+        return root
+
+    @staticmethod
+    def insert_speakers(root) -> ET.Element:
+        """Sets turns' speakers to names in .trs file root."""
+
+        if trans.find('Speakers'):    
+            for turn in trans.iter('Turn'):
+                turn.set('speaker', turn.get('speaker').replace(' ', ' + '))
+                for spk in trans.find('Speakers'):
+                    if spk.get('id') in turn.get('speaker'):
+                        turn.set(
+                            'speaker',
+                            turn.get('speaker').replace(spk.get('id'),
+                                                        spk.get('name'))
+                        )
+
+        return root
+
+    @staticmethod
+    def get_sections(root) -> list:
+        """Returns list of Interval instances for sections from .trs file root."""
+
+        sections = []
+        for sect in root.iter('Section'):
+            start = float(sect.get('startTime'))
+            end = float(sect.get('endTime'))
+            text = sect.get('topic') if sect.get('topic') else sect.get('type')
+
+            sections.append(Interval(start, end, text))
+
+        return sections
+
+    @staticmethod
+    def get_turns(root) -> list:
+        """Returns list of Interval instances for turns from .trs file root."""
+
+        turns = []
+        for turn in root.iter('Turn'):
+            start = float(turn.get('startTime'))
+            end = float(turn.get('endTime'))
+            text = turn.get('speaker') if turn.get('speaker') else '(без мовця)'
+
+            turns.append(Interval(start, end, text))
+
+        return turns
+
+    @staticmethod
+    def get_transcription(root) -> list:
+        """Returns list of Interval instances for transcription and background
+        from .trs file root.
+        """
+
+        transcription = []
+        background = []
+
+        for el in root.findall('.//Turn/*'):
+            if el.tag == 'Sync':
+                start = float(el.get('time'))
+                end = 0.0
+                text = el.tail.strip()
+                transcription.append(Interval(start, end, text))
+
+            elif el.tag == 'Who':
+                nb = el.get('nb')
+                text = el.tail.strip()
+                transcription[-1].text += f" {nb}: {text}"
+
+            elif el.tag == 'Comment':
+                desc = el.get('desc')
+                text = el.tail.strip()
+                transcription[-1].text += f" {{{desc}}} {text}"
+
+            elif el.tag == 'Background':
+                text = el.tail.strip()
+                transcription[-1].text += f" {text}"
+                start = float(el.get('time'))
+                end = 0.0
+                text = el.get('type') if el.get('level') == 'off' else ''
+                background.append(Interval(start, end, text))
+
+            elif el.tag == 'Event':
+                desc, text = el.get('desc'), el.tail.strip()
+                if el.get('extent') == 'instantaneous':
+                    transcription[-1].text += f" [{desc}] {tail}"
+                if el.get('extent') == 'begin':
+                    transcription[-1].text += f" [{desc}-] {tail}"
+                if el.get('extent') == 'end':
+                    transcription[-1].text += f" [-{desc}] {tail}"
+                if el.get('extent') == 'next':
+                    transcription[-1].text += f" [{desc}]+ {tail}"
+                if el.get('extent') == 'previous':
+                    transcription[-1].text += f" +[{desc}] {tail}"
+
+            # set_ends(transcription)
+            # set_ends(background)
+
+            return transcription, background
 
 
 class Converter:

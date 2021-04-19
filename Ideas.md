@@ -9,3 +9,6 @@
 - Make `Annotation` and `Tier` classes iterable.
 - Try replacing index with re pattern in `wav_path`.
 - Store Tier and Annotation elements?
+
+## Feature
+- Support for PointTiers

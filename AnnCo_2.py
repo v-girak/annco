@@ -24,3 +24,20 @@ class Interval:
 
     def __len__(self):
         return self.end - self.start
+
+
+class Tier:
+    """Represents annotation tier containing its intervals."""
+
+    def __init__(self, name, intervals=None):
+        self.name = name
+        if intervals is None:
+            self.intervals = []
+        else:
+            self.intervals = intervals
+    
+    def __repr__(self):
+        return f'Tier({self.name}, intervals)'
+
+    def __len__(self):
+        return len(self.intervals)

@@ -85,13 +85,13 @@ class Annotation:
         """Creates annotation from .eaf file contents."""
 
         ann_doc = contents.getroot()
-        duration = cls.get_duration(ann_doc)
+        duration = cls._get_duration(ann_doc)
 
         align_anns = ann_doc.findall('.//ALIGNABLE_ANNOTATION')
-        ann_doc = cls.insert_align_ann_times(ann_doc, align_anns)
-        ann_doc = cls.insert_ref_ann_times(ann_doc, align_anns)
+        ann_doc = cls._insert_align_ann_times(ann_doc, align_anns)
+        ann_doc = cls._insert_ref_ann_times(ann_doc, align_anns)
 
-        tiers = cls.get_tiers(ann_doc)
+        tiers = cls._get_tiers(ann_doc)
 
         return cls(tiers, duration)
 
@@ -111,7 +111,24 @@ class Annotation:
         # create Annotation from tiers & duration
 
     @staticmethod
-    def insert_ref_ann_times(root, annotations) -> ET.Element:
+    def _get_duration(root) -> float:
+        """Gets annotation duration from .eaf file root.
+        
+        Extracts duration from a media file. If media file is absent,
+        sets value of the last time slot as duration.
+        """
+
+        try:
+            wav_path = root.find('HEADER/MEDIA_DESCRIPTOR').get('MEDIA_URL')
+            with wave.open(wav_path[8:], 'rb') as wav:
+                duration = wav.getnframes() / wav.getframerate()
+        except:
+            duration = int(root.find('TIME_ORDER')[-1].get('TIME_VALUE')) / 1000
+
+        return duration
+
+    @staticmethod
+    def _insert_ref_ann_times(root, annotations) -> ET.Element:
         """Assigns time boundaries to referring annotations."""
 
         for ann in annotations:
@@ -136,24 +153,7 @@ class Annotation:
         return root
 
     @staticmethod
-    def get_duration(root) -> float:
-        """Gets annotation duration from .eaf file root.
-        
-        Extracts duration from a media file. If media file is absent,
-        sets value of the last time slot as duration.
-        """
-
-        try:
-            wav_path = root.find('HEADER/MEDIA_DESCRIPTOR').get('MEDIA_URL')
-            with wave.open(wav_path[8:], 'rb') as wav:
-                duration = wav.getnframes() / wav.getframerate()
-        except:
-            duration = int(root.find('TIME_ORDER')[-1].get('TIME_VALUE')) / 1000
-
-        return duration
-
-    @staticmethod
-    def insert_align_ann_times(root, annotations) -> ET.Element:
+    def _insert_align_ann_times(root, annotations) -> ET.Element:
         """Replaces .eaf alignable annotations' time references with times."""
 
         for ann in annotations:
@@ -168,7 +168,7 @@ class Annotation:
         return root
 
     @staticmethod
-    def get_tiers(root) -> list:
+    def _get_tiers(root) -> list:
         """Returns tiers and their intervals from .eaf file root."""
 
         tiers = []
@@ -188,7 +188,7 @@ class Annotation:
         return tiers
 
     @staticmethod
-    def insert_topics(root) -> ET.Element:
+    def _insert_topics(root) -> ET.Element:
         """Sets sections' topics to descriptions in .trs file root."""
 
         if root.find('Topics'):
@@ -200,7 +200,7 @@ class Annotation:
         return root
 
     @staticmethod
-    def insert_speakers(root) -> ET.Element:
+    def _insert_speakers(root) -> ET.Element:
         """Sets turns' speakers to names in .trs file root."""
 
         if trans.find('Speakers'):    
@@ -217,7 +217,7 @@ class Annotation:
         return root
 
     @staticmethod
-    def get_sections(root) -> list:
+    def _get_sections(root) -> list:
         """Returns list of Interval instances for sections from .trs file root."""
 
         sections = []
@@ -231,7 +231,7 @@ class Annotation:
         return sections
 
     @staticmethod
-    def get_turns(root) -> list:
+    def _get_turns(root) -> list:
         """Returns list of Interval instances for turns from .trs file root."""
 
         turns = []
@@ -245,7 +245,7 @@ class Annotation:
         return turns
 
     @staticmethod
-    def get_transcription(root) -> list:
+    def _get_transcription(root) -> list:
         """Returns list of Interval instances for transcription and background
         from .trs file root.
         """
@@ -290,9 +290,6 @@ class Annotation:
                     transcription[-1].text += f" [{desc}]+ {tail}"
                 if el.get('extent') == 'previous':
                     transcription[-1].text += f" +[{desc}] {tail}"
-
-            # set_ends(transcription)
-            # set_ends(background)
 
             return transcription, background
 

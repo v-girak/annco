@@ -100,15 +100,24 @@ class Annotation:
         """Creates annotation from .trs file contents."""
 
         trans = contents.getroot()
-        # insert sections topics
-        # insert turns speakers
-        # get sections
-        # get turns
-        # get transcription & background
-        # set_ends(transcription)
-        # set_ends(background)
-        # create Tiers from lists above
-        # create Annotation from tiers & duration
+        trans = cls._insert_topics(trans)
+        trans = cls._insert_speakers(trans)
+
+        sections = cls._get_sections(trans)
+        turns = cls._get_turns(trans)
+        transcription, background = cls._get_transcription(trans)
+
+        duration = sections[-1].end
+
+        cls._set_ends(transcription, duration)
+        cls._set_ends(background, duration)
+
+        tiers = [Tier('Теми', sections), Tier('Мовці', turns),
+                 Tier('Транскрипція', transcription)]
+        if background:
+            tiers.append(Tier('Фон', background))
+
+        return cls(tiers, duration)
 
     @staticmethod
     def _get_duration(root) -> float:
@@ -292,6 +301,18 @@ class Annotation:
                     transcription[-1].text += f" +[{desc}] {tail}"
 
             return transcription, background
+
+    @staticmethod
+    def _set_ends(intervals, duration) -> None:
+        """Sets ends for intervals."""
+
+        i = 0
+        while i < len(intervals) - 1:
+            intervals[i].end = intervals[i+1].start
+            i += 1
+        intervals[i].end = duration
+
+        return
 
 
 class Converter:

@@ -39,6 +39,9 @@ class Tier:
     def __repr__(self):
         return f'Tier({self.name}, intervals)'
 
+    def __str__(self):
+        return self.name
+
     def __len__(self):
         return len(self.intervals)
 
@@ -52,7 +55,7 @@ class Annotation:
     
     @classmethod
     def from_tg(cls, contents):
-        """Creates annotation from .TextGrid contents."""
+        """Creates Annotation instance from .TextGrid file contents."""
 
         RE_TIER = re.compile(r'name = "(.*?)"\s+')
         RE_START = re.compile(r'xmin = ([\d.]+)')
@@ -82,7 +85,7 @@ class Annotation:
 
     @classmethod
     def from_eaf(cls, contents):
-        """Creates annotation from .eaf file contents."""
+        """Creates Annotation instance from .eaf file contents."""
 
         ann_doc = contents.getroot()
         duration = cls._get_duration(ann_doc)
@@ -97,7 +100,7 @@ class Annotation:
 
     @classmethod
     def from_trs(cls, contents):
-        """Creates annotation from .trs file contents."""
+        """Creates Annotation instance from .trs file contents."""
 
         trans = contents.getroot()
         trans = cls._insert_topics(trans)
@@ -137,6 +140,21 @@ class Annotation:
         return duration
 
     @staticmethod
+    def _insert_align_ann_times(root, annotations) -> ET.Element:
+        """Replaces .eaf alignable annotations' time references with times."""
+
+        for ann in annotations:
+            for slot in root.find('TIME_ORDER'):
+
+                if ann.get('TIME_SLOT_REF1') == slot.get('TIME_SLOT_ID'):
+                    ann.set('TIME_SLOT_REF1', int(slot.get('TIME_VALUE')) / 1000)
+
+                if ann.get('TIME_SLOT_REF2') == slot.get('TIME_SLOT_ID'):
+                    ann.set('TIME_SLOT_REF2', int(slot.get('TIME_VALUE')) / 1000)
+
+        return root
+
+    @staticmethod
     def _insert_ref_ann_times(root, annotations) -> ET.Element:
         """Assigns time boundaries to referring annotations."""
 
@@ -158,21 +176,6 @@ class Annotation:
                         ref.set("TIME_SLOT_REF2", ref_time)
 
                     insert_ref_ann_times(root, ref_anns)
-
-        return root
-
-    @staticmethod
-    def _insert_align_ann_times(root, annotations) -> ET.Element:
-        """Replaces .eaf alignable annotations' time references with times."""
-
-        for ann in annotations:
-            for slot in root.find('TIME_ORDER'):
-
-                if ann.get('TIME_SLOT_REF1') == slot.get('TIME_SLOT_ID'):
-                    ann.set('TIME_SLOT_REF1', int(slot.get('TIME_VALUE')) / 1000)
-
-                if ann.get('TIME_SLOT_REF2') == slot.get('TIME_SLOT_ID'):
-                    ann.set('TIME_SLOT_REF2', int(slot.get('TIME_VALUE')) / 1000)
 
         return root
 
@@ -300,7 +303,11 @@ class Annotation:
                 if el.get('extent') == 'previous':
                     transcription[-1].text += f" +[{desc}] {tail}"
 
-            return transcription, background
+        # if base interval text was empty & formatted str was appended:
+        for interval in transcription:
+            interval.text = interval.text.strip()
+
+        return transcription, background
 
     @staticmethod
     def _set_ends(intervals, duration) -> None:

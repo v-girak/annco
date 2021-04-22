@@ -435,31 +435,18 @@ def obj_to_eaf(tier_objs, duration):
             {'LINGUISTIC_TYPE_REF': 'default-lt', 'TIER_ID': tier.name}
         )
 
-        if cvar.get():
-            for interval in tier.intervals:
-                interval_count += 1
-                ann_el = ET.SubElement(
-                    ET.SubElement(tier_el, 'ANNOTATION'),
-                    'ALIGNABLE_ANNOTATION',
-                    {'ANNOTATION_ID': 'a'+str(interval_count),
-                     'TIME_SLOT_REF1': str(int(round(interval.start,3)*1000)),
-                     'TIME_SLOT_REF2': str(int(round(interval.end,3)*1000))}
-                )
-                ET.SubElement(ann_el, 'ANNOTATION_VALUE').text = interval.text
-
-        else:
-            for interval in tier.intervals:
-                if not interval.text:
-                    continue
-                interval_count += 1
-                ann_el = ET.SubElement(
-                    ET.SubElement(tier_el, 'ANNOTATION'),
-                    'ALIGNABLE_ANNOTATION',
-                    {'ANNOTATION_ID': 'a'+str(interval_count),
-                     'TIME_SLOT_REF1': str(int(round(interval.start,3)*1000)),
-                     'TIME_SLOT_REF2': str(int(round(interval.end,3)*1000))}
-                )
-                ET.SubElement(ann_el, 'ANNOTATION_VALUE').text = interval.text
+        for interval in tier.intervals:
+            if not interval.text:
+                continue
+            interval_count += 1
+            ann_el = ET.SubElement(
+                ET.SubElement(tier_el, 'ANNOTATION'),
+                'ALIGNABLE_ANNOTATION',
+                {'ANNOTATION_ID': 'a'+str(interval_count),
+                    'TIME_SLOT_REF1': str(int(round(interval.start,3)*1000)),
+                    'TIME_SLOT_REF2': str(int(round(interval.end,3)*1000))}
+            )
+            ET.SubElement(ann_el, 'ANNOTATION_VALUE').text = interval.text
 
     for slot in time_order:
         for ann in ann_doc.iter('ALIGNABLE_ANNOTATION'):

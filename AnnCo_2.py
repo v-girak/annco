@@ -6,6 +6,7 @@ import tkinter as tk
 
 from tkinter import ttk, messagebox
 from tkinter.filedialog import askopenfilename, asksaveasfilename
+from AnnCo_1 import obj_to_tg, obj_to_eaf
 
 
 class Interval:
@@ -384,7 +385,8 @@ class Converter:
         elif ext == 'trs':
             ann = Annotation.from_trs(contents)
 
-        print(ann)
+        obj_to_tg(ann.tiers, ann.duration)
+        obj_to_eaf(ann.tiers, ann.duration)
 
 
 if __name__ == '__main__':

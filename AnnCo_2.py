@@ -64,7 +64,7 @@ class Annotation:
         RE_TIER = re.compile(r'name = "(.*?)"\s+')
         RE_START = re.compile(r'xmin = ([\d.]+)')
         RE_END = re.compile(r'xmax = ([\d.]+)')
-        RE_TEXT = re.compile(r'text = "(.*?)"\s+')
+        RE_TEXT = re.compile(r'text = "(.*?)"\s+', re.S)
 
         textgrid = contents[contents.find('item [1]:'):]
         tg_tiers = re.split(r'item \[\d+\]:', textgrid)[1:]

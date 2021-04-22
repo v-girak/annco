@@ -52,6 +52,9 @@ class Annotation:
     def __init__(self, tiers, duration: float):
         self.tiers = tiers
         self.duration = duration
+
+    def __str__(self):
+        return f"Annotation contains {len(self.tiers)} tiers."
     
     @classmethod
     def from_tg(cls, contents):
@@ -62,14 +65,14 @@ class Annotation:
         RE_END = re.compile(r'xmax = ([\d.]+)')
         RE_TEXT = re.compile(r'text = "(.*?)"\s+')
 
-        duration = float(RE_END.search(textgrid).group(1))
-
-        textgrid = textgrid[textgrid.find('item [1]:'):]
+        textgrid = contents[contents.find('item [1]:'):]
         tg_tiers = re.split(r'item \[\d+\]:', textgrid)[1:]
+
+        duration = float(RE_END.search(textgrid).group(1))
 
         tiers = []
         for t in tg_tiers:
-            if not re.search(r"IntervalTier", tier):
+            if not re.search(r"IntervalTier", t):
                 continue
 
             starts = [float(start) for start in RE_START.findall(t)][1:]
@@ -172,10 +175,10 @@ class Annotation:
 
                     for ref in ref_anns:
                         ref.set('TIME_SLOT_REF1', ref_time)
-                        ref_time += ref_len
+                        ref_time += ref_dur
                         ref.set("TIME_SLOT_REF2", ref_time)
 
-                    insert_ref_ann_times(root, ref_anns)
+                    Annotation._insert_ref_ann_times(root, ref_anns)
 
         return root
 
@@ -204,7 +207,7 @@ class Annotation:
         """Sets sections' topics to descriptions in .trs file root."""
 
         if root.find('Topics'):
-            for sect in trans.iter('Section'):
+            for sect in root.iter('Section'):
                 for topic in root.find('Topics'):
                     if sect.get('topic') == topic.get('id'):
                         sect.set('topic', topic.get('desc'))
@@ -215,10 +218,10 @@ class Annotation:
     def _insert_speakers(root) -> ET.Element:
         """Sets turns' speakers to names in .trs file root."""
 
-        if trans.find('Speakers'):    
-            for turn in trans.iter('Turn'):
+        if root.find('Speakers'):    
+            for turn in root.iter('Turn'):
                 turn.set('speaker', turn.get('speaker').replace(' ', ' + '))
-                for spk in trans.find('Speakers'):
+                for spk in root.find('Speakers'):
                     if spk.get('id') in turn.get('speaker'):
                         turn.set(
                             'speaker',
@@ -293,15 +296,15 @@ class Annotation:
             elif el.tag == 'Event':
                 desc, text = el.get('desc'), el.tail.strip()
                 if el.get('extent') == 'instantaneous':
-                    transcription[-1].text += f" [{desc}] {tail}"
+                    transcription[-1].text += f" [{desc}] {text}"
                 if el.get('extent') == 'begin':
-                    transcription[-1].text += f" [{desc}-] {tail}"
+                    transcription[-1].text += f" [{desc}-] {text}"
                 if el.get('extent') == 'end':
-                    transcription[-1].text += f" [-{desc}] {tail}"
+                    transcription[-1].text += f" [-{desc}] {text}"
                 if el.get('extent') == 'next':
-                    transcription[-1].text += f" [{desc}]+ {tail}"
+                    transcription[-1].text += f" [{desc}]+ {text}"
                 if el.get('extent') == 'previous':
-                    transcription[-1].text += f" +[{desc}] {tail}"
+                    transcription[-1].text += f" +[{desc}] {text}"
 
         # if base interval text was empty & formatted str was appended:
         for interval in transcription:
@@ -317,7 +320,7 @@ class Annotation:
         while i < len(intervals) - 1:
             intervals[i].end = intervals[i+1].start
             i += 1
-        intervals[i].end = duration
+        if intervals: intervals[i].end = duration
 
         return
 
@@ -333,6 +336,7 @@ class Converter:
     def __init__(self):
         self.ann_file = None
         self.file_name = None
+        self.file_format = None
 
     def open_file(self):
         """Opens annotation file and returns its contents."""
@@ -367,3 +371,25 @@ class Converter:
             except UnicodeDecodeError:
                 messagebox.showerror(title="Ой!", message=self.ENCOD_MSG)
                 return
+
+    def test_convert(self, ext):
+        """Test function to check Annotation alternative constructors."""
+
+        contents = self.open_file()
+
+        if ext == 'tg':
+            ann = Annotation.from_tg(contents)
+        elif ext == 'eaf':
+            ann = Annotation.from_eaf(contents)
+        elif ext == 'trs':
+            ann = Annotation.from_trs(contents)
+
+        print(ann)
+
+
+if __name__ == '__main__':
+
+    annco = Converter()
+    annco.test_convert('tg')
+    annco.test_convert('eaf')
+    annco.test_convert('trs')

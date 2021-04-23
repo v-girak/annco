@@ -95,8 +95,8 @@ class Annotation:
         duration = cls._get_duration(ann_doc)
 
         align_anns = ann_doc.findall('.//ALIGNABLE_ANNOTATION')
-        ann_doc = cls._insert_align_ann_times(ann_doc, align_anns)
-        ann_doc = cls._insert_ref_ann_times(ann_doc, align_anns)
+        cls._insert_align_ann_times(ann_doc, align_anns)
+        cls._insert_ref_ann_times(ann_doc, align_anns)
 
         tiers = cls._get_tiers(ann_doc)
 
@@ -107,8 +107,8 @@ class Annotation:
         """Creates Annotation instance from .trs file contents."""
 
         trans = contents.getroot()
-        trans = cls._insert_topics(trans)
-        trans = cls._insert_speakers(trans)
+        cls._insert_topics(trans)
+        cls._insert_speakers(trans)
 
         sections = cls._get_sections(trans)
         turns = cls._get_turns(trans)
@@ -139,12 +139,13 @@ class Annotation:
             with wave.open(wav_path[8:], 'rb') as wav:
                 duration = wav.getnframes() / wav.getframerate()
         except:
-            duration = int(root.find('TIME_ORDER')[-1].get('TIME_VALUE')) / 1000
+            last_time = int(root.find('TIME_ORDER')[-1].get('TIME_VALUE')) / 1000
+            duration = last_time if last_time > 300.0 else 300.0
 
         return duration
 
     @staticmethod
-    def _insert_align_ann_times(root, annotations) -> ET.Element:
+    def _insert_align_ann_times(root, annotations) -> None:
         """Replaces .eaf alignable annotations' time references with times."""
 
         for ann in annotations:
@@ -156,10 +157,10 @@ class Annotation:
                 if ann.get('TIME_SLOT_REF2') == slot.get('TIME_SLOT_ID'):
                     ann.set('TIME_SLOT_REF2', int(slot.get('TIME_VALUE')) / 1000)
 
-        return root
+        return
 
     @staticmethod
-    def _insert_ref_ann_times(root, annotations) -> ET.Element:
+    def _insert_ref_ann_times(root, annotations) -> None:
         """Assigns time boundaries to referring annotations."""
 
         for ann in annotations:
@@ -181,7 +182,7 @@ class Annotation:
 
                     Annotation._insert_ref_ann_times(root, ref_anns)
 
-        return root
+        return
 
     @staticmethod
     def _get_tiers(root) -> list:
@@ -204,7 +205,7 @@ class Annotation:
         return tiers
 
     @staticmethod
-    def _insert_topics(root) -> ET.Element:
+    def _insert_topics(root) -> None:
         """Sets sections' topics to descriptions in .trs file root."""
 
         if root.find('Topics'):
@@ -213,10 +214,10 @@ class Annotation:
                     if sect.get('topic') == topic.get('id'):
                         sect.set('topic', topic.get('desc'))
 
-        return root
+        return
 
     @staticmethod
-    def _insert_speakers(root) -> ET.Element:
+    def _insert_speakers(root) -> None:
         """Sets turns' speakers to names in .trs file root."""
 
         if root.find('Speakers'):    
@@ -230,7 +231,7 @@ class Annotation:
                                                         spk.get('name'))
                         )
 
-        return root
+        return
 
     @staticmethod
     def _get_sections(root) -> list:
@@ -291,7 +292,7 @@ class Annotation:
                 transcription[-1].text += f" {text}"
                 start = float(el.get('time'))
                 end = 0.0
-                text = el.get('type') if el.get('level') == 'off' else ''
+                text = '' if el.get('level') == 'off' else el.get('type')
                 background.append(Interval(start, end, text))
 
             elif el.tag == 'Event':

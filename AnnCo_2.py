@@ -392,6 +392,6 @@ class Converter:
 if __name__ == '__main__':
 
     annco = Converter()
-    annco.test_convert('tg')
-    annco.test_convert('eaf')
+    # annco.test_convert('tg')
+    # annco.test_convert('eaf')
     annco.test_convert('trs')

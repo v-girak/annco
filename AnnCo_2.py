@@ -36,6 +36,7 @@ class Tier:
             self.intervals = []
         else:
             self.intervals = intervals
+        self._index = 0
 
     def __repr__(self):
         return f'Tier({self.name}, intervals)'
@@ -46,6 +47,16 @@ class Tier:
     def __len__(self):
         return len(self.intervals)
 
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._index >= len(self.intervals):
+            raise StopIteration
+        i = self._index
+        self._index += 1
+        return self.intervals[i]
+
 
 class Annotation:
     """Represents entire annotation."""
@@ -53,9 +64,20 @@ class Annotation:
     def __init__(self, tiers, duration: float):
         self.tiers = tiers
         self.duration = duration
+        self._index = 0
 
     def __str__(self):
         return f"Annotation contains {len(self.tiers)} tiers."
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._index >= len(self.tiers):
+            raise StopIteration
+        i = self._index
+        self._index += 1
+        return self.tiers[i]
     
     @classmethod
     def from_tg(cls, contents):

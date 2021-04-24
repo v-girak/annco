@@ -57,6 +57,10 @@ class Tier:
         self._index += 1
         return self.intervals[i]
 
+    def __getitem__(self, index):
+        return self.intervals.__getitem__(index)
+
+
 
 class Annotation:
     """Represents entire annotation."""
@@ -347,6 +351,22 @@ class Annotation:
         if intervals: intervals[i].end = duration
 
         return
+
+    def fill_spaces(self):
+    "Fills empty spaces between intervals and tier boundaries on all tiers."
+
+        for tier in self:
+            for i in range(len(tier)-1):
+                if tier[i].end < tier[i+1].start:
+                    tier.intervals.insert(
+                        i+1, Interval(tier[i].end, tier[i+1].start, '')
+                    )
+
+            if tier.intervals:
+                if tier[0].start > 0:
+                    tier.intervals.insert(0, Interval(0, tier[0].start, ''))
+                if tier[-1].end < self.duration:
+                    tier.intervals.append(Interval(tier[-1].end, duration, ''))
 
 
 class Converter:

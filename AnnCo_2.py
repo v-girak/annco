@@ -12,10 +12,13 @@ from AnnCo_1 import obj_to_tg, obj_to_eaf
 class Interval:
     """Represents annotation interval."""
 
-    def __init__(self, start: float, end: float, text):
+    def __init__(self, start: float, end: float, text=None):
         self.start = start
         self.end = end
-        self.text = text
+        if text is None:
+            self.text = ''
+        else:
+            self.text = text
 
     def __repr__(self):
         return f'Interval({self.start}, {self.end}, {self.text})'
@@ -25,6 +28,18 @@ class Interval:
 
     def __len__(self):
         return self.end - self.start
+
+    def to_tg(self, i) -> str:
+        "Returns a string representing interval in a .TextGrid file"
+
+        tg_interval = (
+            f"        intervals [{i}]:\n"
+            f"            xmin = {self.start}\n"
+            f"            xmax = {self.end}\n"
+            f"            text = \"{self.text}\"\n"
+        )
+
+        return tg_interval
 
 
 class Tier:
@@ -48,6 +63,7 @@ class Tier:
         return len(self.intervals)
 
     def __iter__(self):
+        self._index = 0
         return self
 
     def __next__(self):
@@ -58,8 +74,24 @@ class Tier:
         return self.intervals[i]
 
     def __getitem__(self, index):
-        return self.intervals.__getitem__(index)
+        return self.intervals[index]
 
+    def to_tg(self, t) -> str:
+        "Returns a string representing tier in a .TextGrid file"
+
+        tg_tier = (
+            f"    item [{t}]:\n"
+            "        class = \"IntervalTier\"\n"
+            f"        name = \"{self.name}\"\n"
+            f"        xmin = {self[0].start}\n"
+            f"        xmax = {self[-1].end}\n"
+            f"        intervals: size = {len(self)}\n"
+        )
+
+        for i, interval in enumerate(self, start=1):
+            tg_tier += interval.to_tg(i)
+
+        return tg_tier
 
 
 class Annotation:
@@ -73,7 +105,11 @@ class Annotation:
     def __str__(self):
         return f"Annotation contains {len(self.tiers)} tiers."
 
+    def __len__(self):
+        return len(self.tiers)
+
     def __iter__(self):
+        self._index = 0
         return self
 
     def __next__(self):
@@ -82,6 +118,9 @@ class Annotation:
         i = self._index
         self._index += 1
         return self.tiers[i]
+
+    def __getitem__(self, index):
+        return self.tiers[index]
     
     @classmethod
     def from_tg(cls, contents):
@@ -352,8 +391,8 @@ class Annotation:
 
         return
 
-    def fill_spaces(self):
-    "Fills empty spaces between intervals and tier boundaries on all tiers."
+    def fill_spaces(self) -> None:
+        "Fills empty spaces between intervals and tier boundaries on all tiers."
 
         for tier in self:
             for i in range(len(tier)-1):
@@ -366,7 +405,29 @@ class Annotation:
                 if tier[0].start > 0:
                     tier.intervals.insert(0, Interval(0, tier[0].start, ''))
                 if tier[-1].end < self.duration:
-                    tier.intervals.append(Interval(tier[-1].end, duration, ''))
+                    tier.intervals.append(Interval(tier[-1].end, self.duration, ''))
+
+        return
+
+    def to_tg(self) -> str:
+        "Returns a string representing Annotation to be written into .TextGrid"
+
+        self.fill_spaces()
+
+        tg_ann = (
+            "File type = \"ooTextFile\"\n"
+            "Object class = \"TextGrid\"\n\n"
+            f"xmin = {0}\n"
+            f"xmax = {self.duration}\n"
+            "tiers? <exists>\n"
+            f"size = {len(self)}\n"
+            "item []:\n"
+        )
+
+        for t, tier in enumerate(self, start=1):
+            tg_ann += tier.to_tg(t)
+
+        return tg_ann
 
 
 class Converter:
@@ -417,7 +478,7 @@ class Converter:
                 return
 
     def test_convert(self, ext):
-        """Test function to check Annotation alternative constructors."""
+        """Test function to check functionality."""
 
         contents = self.open_file()
 
@@ -428,13 +489,23 @@ class Converter:
         elif ext == 'trs':
             ann = Annotation.from_trs(contents)
 
-        obj_to_tg(ann.tiers, ann.duration)
-        obj_to_eaf(ann.tiers, ann.duration)
+        tg_ann = ann.to_tg()
+    
+        filepath = asksaveasfilename(
+            defaultextension='TextGrid',
+            filetypes=[('Файли Praat', '*.TextGrid')]
+        )
+
+        with open(filepath, 'w', encoding='UTF-8') as tg_file:
+            tg_file.write(tg_ann) 
+
+        messagebox.showinfo(title='Ура!', message='Файл збережено!')
+        # obj_to_eaf(ann.tiers, ann.duration)
 
 
 if __name__ == '__main__':
 
     annco = Converter()
-    annco.test_convert('tg')
-    annco.test_convert('eaf')
+    # annco.test_convert('tg')
+    # annco.test_convert('eaf')
     annco.test_convert('trs')

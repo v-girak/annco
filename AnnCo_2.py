@@ -457,7 +457,7 @@ class Annotation:
         ann_doc = self._eaf_root()
         ann_tree = ET.ElementTree(ann_doc)
 
-        self._eaf_header()
+        self._eaf_header(ann_doc)
         self._time_slots(ann_doc, self._time_values())
         for tier in self: tier.to_eaf(ann_doc)
         self._time_slot_refs(ann_doc)
@@ -468,7 +468,9 @@ class Annotation:
         self._symb_assoc(ann_doc)
         self._incl_in(ann_doc)
 
-        return ann_tree
+        self._readable(ann_tree)
+
+        # return ann_tree
 
     @staticmethod
     def _eaf_root() -> ET.Element:
@@ -594,6 +596,25 @@ class Annotation:
                                            'STEREOTYPE': 'Included_In'}
         )
 
+    # TO DELETE:
+    @staticmethod
+    def _readable(tree) -> ET.ElementTree:
+        "Create toprettyxml representation of .eaf tree"
+
+        filepath = asksaveasfilename(
+            defaultextension='eaf',
+            filetypes=[('Файли Elan', '*.eaf')]
+        )
+        if not filepath:
+            return
+
+        tree.write(filepath, 'UTF-8')
+        tree = MD.parse(filepath)
+        tree_str = tree.toprettyxml()
+        root = ET.fromstring(tree_str)
+        tree = ET.ElementTree(root)
+        tree.write(filepath, 'UTF-8', xml_declaration=True)
+        messagebox.showinfo(title='Ура!', message='Файл збережено!')
 
 class Converter:
     """Represents AnnCo interface."""
@@ -654,6 +675,8 @@ class Converter:
         elif ext == 'trs':
             ann = Annotation.from_trs(contents)
 
+        # ann.to_eaf()
+
         tg_ann = ann.to_tg()
     
         filepath = asksaveasfilename(
@@ -671,6 +694,6 @@ class Converter:
 if __name__ == '__main__':
 
     annco = Converter()
-    # annco.test_convert('tg')
+    annco.test_convert('tg')
     # annco.test_convert('eaf')
-    annco.test_convert('trs')
+    # annco.test_convert('trs')

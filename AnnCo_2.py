@@ -81,7 +81,7 @@ class Tier:
 
         tg_tier = (
             f"    item [{t}]:\n"
-            "        class = \"IntervalTier\"\n"
+             "        class = \"IntervalTier\"\n"
             f"        name = \"{self.name}\"\n"
             f"        xmin = {self[0].start}\n"
             f"        xmax = {self[-1].end}\n"
@@ -222,8 +222,6 @@ class Annotation:
                 if ann.get('TIME_SLOT_REF2') == slot.get('TIME_SLOT_ID'):
                     ann.set('TIME_SLOT_REF2', int(slot.get('TIME_VALUE')) / 1000)
 
-        return
-
     @staticmethod
     def _insert_ref_ann_times(root, annotations) -> None:
         """Assigns time boundaries to referring annotations."""
@@ -246,8 +244,6 @@ class Annotation:
                         ref.set("TIME_SLOT_REF2", ref_time)
 
                     Annotation._insert_ref_ann_times(root, ref_anns)
-
-        return
 
     @staticmethod
     def _get_tiers(root) -> list:
@@ -279,8 +275,6 @@ class Annotation:
                     if sect.get('topic') == topic.get('id'):
                         sect.set('topic', topic.get('desc'))
 
-        return
-
     @staticmethod
     def _insert_speakers(root) -> None:
         """Sets turns' speakers to names in .trs file root."""
@@ -295,8 +289,6 @@ class Annotation:
                             turn.get('speaker').replace(spk.get('id'),
                                                         spk.get('name'))
                         )
-
-        return
 
     @staticmethod
     def _get_sections(root) -> list:
@@ -383,36 +375,15 @@ class Annotation:
     def _set_ends(intervals, duration) -> None:
         """Sets ends for intervals."""
 
-        i = 0
-        while i < len(intervals) - 1:
+        for i in range(len(intervals)-1):
             intervals[i].end = intervals[i+1].start
-            i += 1
+
         if intervals: intervals[i].end = duration
-
-        return
-
-    def fill_spaces(self) -> None:
-        "Fills empty spaces between intervals and tier boundaries on all tiers."
-
-        for tier in self:
-            for i in range(len(tier)-1):
-                if tier[i].end < tier[i+1].start:
-                    tier.intervals.insert(
-                        i+1, Interval(tier[i].end, tier[i+1].start, '')
-                    )
-
-            if tier.intervals:
-                if tier[0].start > 0:
-                    tier.intervals.insert(0, Interval(0, tier[0].start, ''))
-                if tier[-1].end < self.duration:
-                    tier.intervals.append(Interval(tier[-1].end, self.duration, ''))
-
-        return
 
     def to_tg(self) -> str:
         "Returns a string representing Annotation to be written into .TextGrid"
 
-        self.fill_spaces()
+        self._fill_spaces()
 
         tg_ann = (
             "File type = \"ooTextFile\"\n"
@@ -428,6 +399,22 @@ class Annotation:
             tg_ann += tier.to_tg(t)
 
         return tg_ann
+    
+    def _fill_spaces(self) -> None:
+        "Fills empty spaces between intervals and tier boundaries on all tiers."
+
+        for tier in self:
+            for i in range(len(tier)-1):
+                if tier[i].end < tier[i+1].start:
+                    tier.intervals.insert(
+                        i+1, Interval(tier[i].end, tier[i+1].start, '')
+                    )
+
+            if tier.intervals:
+                if tier[0].start > 0:
+                    tier.intervals.insert(0, Interval(0, tier[0].start, ''))
+                if tier[-1].end < self.duration:
+                    tier.intervals.append(Interval(tier[-1].end, self.duration, ''))
 
 
 class Converter:

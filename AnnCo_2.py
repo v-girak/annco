@@ -29,8 +29,20 @@ class Interval:
     def __len__(self):
         return self.end - self.start
 
+    @property
+    def eaf_start(self) -> int:
+        "Returns interval start value formatted for .eaf"
+
+        return int(round(self.start, 3) * 1000)
+
+    @property
+    def eaf_end(self) -> int:
+        "Returns interval end value formatted for .eaf"
+
+        return int(round(self.end, 3) * 1000)
+
     def to_tg(self, i) -> str:
-        "Returns a string representing interval in a .TextGrid file"
+        "Returns a string representing interval in .TextGrid file"
 
         tg_interval = (
             f"        intervals [{i}]:\n"
@@ -40,6 +52,18 @@ class Interval:
         )
 
         return tg_interval
+
+    def to_eaf(self, i, tier_el) -> None:
+        "Creates ANNOTATION element representing interval in .eaf file"
+
+        ann_el = ET.SubElement(tier_el, 'ANNOTATION')
+
+        align_ann = ET.SubElement(ann_el, 'ALIGNABLE_ANNOTATION',
+                                  {'ANNOTATION_ID': 'a' + str(i),
+                                   'TIME_SLOT_REF1': str(self.eaf_start),
+                                   'TIME_SLOT_REF2': str(self.eaf_end)})
+
+        ET.SubElement(align_ann, 'ANNOTATION_VALUE').text = self.text
 
 
 class Tier:
@@ -92,6 +116,17 @@ class Tier:
             tg_tier += interval.to_tg(i)
 
         return tg_tier
+
+    def to_eaf(self, root) -> None:
+        "Creates TIER element representing tier in .eaf file"
+
+        tier_el = ET.SubElement(root, 'TIER', {'LINGUISTIC_TYPE_REF': 'default-lt',
+                                               'TIER_ID': self.name})
+
+        for i, interval in enumerate(self, start=1):
+            if not interval.text:
+                continue
+            interval.to_eaf(i, tier_el)
 
 
 class Annotation:
@@ -399,7 +434,7 @@ class Annotation:
             tg_ann += tier.to_tg(t)
 
         return tg_ann
-    
+
     def _fill_spaces(self) -> None:
         "Fills empty spaces between intervals and tier boundaries on all tiers."
 
@@ -415,6 +450,149 @@ class Annotation:
                     tier.intervals.insert(0, Interval(0, tier[0].start, ''))
                 if tier[-1].end < self.duration:
                     tier.intervals.append(Interval(tier[-1].end, self.duration, ''))
+
+    def to_eaf(self) -> ET.ElementTree:
+        "Returns an Element Tree representing Annotation to be written into .eaf"
+
+        ann_doc = self._eaf_root()
+        ann_tree = ET.ElementTree(ann_doc)
+
+        self._eaf_header()
+        self._time_slots(ann_doc, self._time_values())
+        for tier in self: tier.to_eaf(ann_doc)
+        self._time_slot_refs(ann_doc)
+
+        self._default_lt(ann_doc)
+        self._time_sub(ann_doc)
+        self._symb_sub(ann_doc)
+        self._symb_assoc(ann_doc)
+        self._incl_in(ann_doc)
+
+        return ann_tree
+
+    @staticmethod
+    def _eaf_root() -> ET.Element:
+        "Returns root ANNOTATION_DOCUMENT element for .eaf tree"
+
+        root = ET.Element(
+            'ANNOTATION_DOCUMENT',
+            {'AUTHOR': '', 'FORMAT': '3.0', 'VERSION': '3.0',
+            'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+            'xsi:noNamespaceSchemaLocation': 'http://www.mpi.nl/tools/elan/EAFv3.0.xsd'}
+        )
+
+        return root
+
+    @staticmethod
+    def _eaf_header(root) -> None:
+        "Creates HEADER element in .eaf tree"
+
+        header = ET.SubElement(root, 'HEADER', {'MEDIA_FILE': '',
+                                                'TIME_UNITS': 'milliseconds'})
+
+        urn = ET.SubElement(header, 'PROPERTY', {'NAME': 'URN'})
+        last_ann = ET.SubElement(header, 'PROPERTY', {'NAME': 'lastUsedAnnotationId'})
+
+        urn.text = 'urn:nl-mpi-tools-elan-eaf:187f732a-340c-4c9e-a8c3-307ba38799fb'
+        last_ann.text = '0'
+
+    def _time_values(self) -> list:
+        "Returns a list of time values of all annotation intervals."
+
+        time_values = []
+
+        for tier in self:
+            for interval in tier:
+                if not interval.text:
+                    continue
+                time_values.append(interval.eaf_start)
+                time_values.append(interval.eaf_end)
+        
+        time_values.sort()
+
+        return time_values
+
+    @staticmethod
+    def _time_slots(root, time_values) -> None:
+        "Creates TIME_ORDER and TIME_SLOT elements in .eaf tree from time values"
+
+        time_order = ET.SubElement(root, 'TIME_ORDER')
+
+        for i, tv in enumerate(time_values, start=1):
+            ET.SubElement(time_order, 'TIME_SLOT', {'TIME_SLOT_ID' : 'ts' + str(i),
+                                                    'TIME_VALUE': str(tv)}
+            )
+
+    @staticmethod
+    def _time_slot_refs(root) -> None:
+        "Replaces TIME_SLOT_REF1/2 attribute values with references"
+
+        for ann in root.iter('ALIGNABLE_ANNOTATION'):
+            for ts in root.find('TIME_ORDER'):
+
+                if ann.get('TIME_SLOT_REF1') == ts.get('TIME_VALUE'):
+                    ann.set('TIME_SLOT_REF1', ts.get('TIME_SLOT_ID'))
+
+                if ann.get('TIME_SLOT_REF2') == ts.get('TIME_VALUE'):
+                    ann.set('TIME_SLOT_REF2', ts.get('TIME_SLOT_ID'))
+
+    @staticmethod
+    def _default_lt(root) -> None:
+        "Creates LINGUISTIC_TYPE element for default-lt type in .eaf tree"
+
+        ET.SubElement(root, 'LINGUISTIC_TYPE', {'GRAPHIC_REFERENCES': 'false',
+                                                'LINGUISTIC_TYPE_ID': 'default-lt',
+                                                'TIME_ALIGNABLE': 'true'}
+        )
+
+    @staticmethod
+    def _time_sub(root) -> None:
+        "Creates CONSTRAINT element for Time_Subdivision in .eaf tree"
+
+        DESC = (
+            "Time subdivision of parent annotation's time interval, no time "
+            "gaps allowed within this interval"
+        )
+
+        ET.SubElement(root, 'CONSTRAINT', {'DESCRIPTION': DESC,
+                                           'STEREOTYPE': 'Time_Subdivision'}
+        )
+
+    @staticmethod
+    def _symb_sub(root) -> None:
+        "Creates CONSTRAINT element for Symbolic_Subdivision in .eaf tree"
+
+        DESC = (
+            "Symbolic subdivision of a parent annotation. "
+            "Annotations refering to the same parent are ordered"
+        )
+
+        ET.SubElement(root, 'CONSTRAINT', {'DESCRIPTION': DESC,
+                                           'STEREOTYPE': 'Symbolic_Subdivision'}
+        )
+
+    @staticmethod
+    def _symb_assoc(root) -> None:
+        "Creates CONSTRAINT element for Symbolic_Association in .eaf tree"
+
+        DESC = "1-1 association with a parent annotation"
+
+        ET.SubElement(root, 'CONSTRAINT', {'DESCRIPTION': DESC,
+                                           'STEREOTYPE': 'Symbolic_Association'}
+        )
+
+    @staticmethod
+    def _incl_in(root) -> None:
+        "Creates CONSTRAINT element for Included_In in .eaf tree"
+
+        DESC = (
+            "Time alignable annotations within the parent annotation's "
+            "time interval, gaps are allowed"
+        )
+
+        ET.SubElement(root, 'CONSTRAINT', {'DESCRIPTION': DESC,
+                                           'STEREOTYPE': 'Included_In'}
+        )
 
 
 class Converter:

@@ -3,6 +3,7 @@ import wave
 import xml.etree.ElementTree as ET
 import xml.dom.minidom as MD
 import tkinter as tk
+import tests
 
 from tkinter import ttk, messagebox
 from tkinter.filedialog import askopenfilename, asksaveasfilename
@@ -468,7 +469,7 @@ class Annotation:
         self._symb_assoc(ann_doc)
         self._incl_in(ann_doc)
 
-        self._readable(ann_tree)
+        tests.readable(ann_tree)
 
         # return ann_tree
 
@@ -490,7 +491,8 @@ class Annotation:
         "Creates HEADER element in .eaf tree"
 
         header = ET.SubElement(root, 'HEADER', {'MEDIA_FILE': '',
-                                                'TIME_UNITS': 'milliseconds'})
+                                                'TIME_UNITS': 'milliseconds'}
+        )
 
         urn = ET.SubElement(header, 'PROPERTY', {'NAME': 'URN'})
         last_ann = ET.SubElement(header, 'PROPERTY', {'NAME': 'lastUsedAnnotationId'})
@@ -596,25 +598,6 @@ class Annotation:
                                            'STEREOTYPE': 'Included_In'}
         )
 
-    # TO DELETE:
-    @staticmethod
-    def _readable(tree) -> ET.ElementTree:
-        "Create toprettyxml representation of .eaf tree"
-
-        filepath = asksaveasfilename(
-            defaultextension='eaf',
-            filetypes=[('Файли Elan', '*.eaf')]
-        )
-        if not filepath:
-            return
-
-        tree.write(filepath, 'UTF-8')
-        tree = MD.parse(filepath)
-        tree_str = tree.toprettyxml()
-        root = ET.fromstring(tree_str)
-        tree = ET.ElementTree(root)
-        tree.write(filepath, 'UTF-8', xml_declaration=True)
-        messagebox.showinfo(title='Ура!', message='Файл збережено!')
 
 class Converter:
     """Represents AnnCo interface."""

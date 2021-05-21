@@ -1,12 +1,11 @@
 import re
 import wave
 import xml.etree.ElementTree as ET
-import xml.dom.minidom as MD
 import tkinter as tk
 import tests
 
 from tkinter import ttk, messagebox
-from tkinter.filedialog import askopenfilename, asksaveasfilename
+from tkinter.filedialog import askopenfilenames, asksaveasfilename
 from AnnCo_1 import obj_to_tg, obj_to_eaf
 
 
@@ -239,7 +238,7 @@ class Annotation:
             wav_path = root.find('HEADER/MEDIA_DESCRIPTOR').get('MEDIA_URL')
             with wave.open(wav_path[8:], 'rb') as wav:
                 duration = wav.getnframes() / wav.getframerate()
-        except:
+        except Exception:
             last_time = int(root.find('TIME_ORDER')[-1].get('TIME_VALUE')) / 1000
             duration = last_time if last_time > 300.0 else 300.0
 
@@ -469,9 +468,9 @@ class Annotation:
         self._symb_assoc(ann_doc)
         self._incl_in(ann_doc)
 
-        tests.readable(ann_tree)
+        # tests.readable(ann_tree)
 
-        # return ann_tree
+        return ann_tree
 
     @staticmethod
     def _eaf_root() -> ET.Element:
@@ -599,57 +598,208 @@ class Annotation:
         )
 
 
-class Converter:
-    """Represents AnnCo interface."""
-    
-    RE_TXT = re.compile(r'\.textgrid$', re.I)
+class InputFiles(ttk.Labelframe):
+    "Labelframe containing"
+
+    RE_NAME = re.compile(r'[^/]+$')
+    RE_TXT = re.compile(r'\.(textgrid|txt)$', re.I)
     RE_XML = re.compile(r'\.(eaf|trs)$', re.I)
-    ENCOD_MSG = ("Кодування обраного файлу не підтримується. Будь ласка, "
-                 "збережіть файл у кодуванні UTF-8 або оберіть інший.")
+    ENCOD_MSG = ("Кодування файлу(ів) {} не підтримується. Будь ласка, "
+                 "збережіть файл(и) у кодуванні UTF-8 та спробуйте ще раз.")
 
-    def __init__(self):
-        self.ann_file = None
-        self.file_name = None
-        self.file_format = None
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
 
-    def open_file(self):
-        """Opens annotation file and returns its contents."""
-
-        file_path = askopenfilename(
-            title='Оберіть вхідний файл',
-            filetypes=[
-                ('Файли Praat', '*.TextGrid'),
-                ('Файли Elan', '*.eaf'),
-                ('Файли Transcriber', '*.trs')
-            ]
+        self.names, self.contents = [], []
+        self.names_var = tk.StringVar(value=self.names)
+        self.lb_files = tk.Listbox(self, height=5, width=30, activestyle='none',
+                                   listvariable=self.names_var)
+        self.lb_files.bind(
+            '<<ListboxSelect>>',
+            lambda x: self.btn_remove.state(['!disabled'])
         )
-        if not file_path:
-            return
 
-        self.file_name = re.search(r'[^/]+$', file_path).group(0)
+        self.sb_files = ttk.Scrollbar(self, orient=tk.VERTICAL,
+                                      command=self.lb_files.yview)
+        self.lb_files['yscrollcommand'] = self.sb_files.set
 
-        if self.RE_TXT.search(self.file_name):
-            self.file_format = 'txt'
-        elif self.RE_XML.search(self.file_name):
-            self.file_format = 'xml'
+        self.btn_select = ttk.Button(self, text="Обрати файли",
+                                     command=self.select_files)
 
-        # lbl_name['text'] = file_name
+        self.btn_clear = ttk.Button(self, text="Очистити все",
+                                    command=self.clear_files)
 
-        with open(file_path, encoding='UTF-8') as ann_file:
-            try:
-                if self.file_format == 'txt':
-                    contents = ann_file.read()
-                elif self.file_format == 'xml':
-                    contents = ET.parse(ann_file)
-                return contents
-            except UnicodeDecodeError:
-                messagebox.showerror(title="Ой!", message=self.ENCOD_MSG)
-                return
+        self.btn_remove = ttk.Button(self, text="Видалити",
+                                     command=self.remove_files,
+                                     state='disabled')
+
+        self._layout()
+
+    def _layout(self) -> None:
+        "Lays widgets out"
+
+        self.lb_files.pack(side=tk.LEFT)
+        self.sb_files.pack(side=tk.LEFT, fill=tk.Y)
+        self.btn_select.pack()
+        self.btn_clear.pack()
+        self.btn_remove.pack()
+    
+    def select_files(self) -> None:
+        "Extracts contents from user selected files and updates file names"
+
+        paths = self._get_paths()
+        names = self._get_names(paths)
+        formats = self._get_formats(names)
+        names, contents = self._read_files(paths, names, formats)
+        self.names.extend(names)
+        self.contents.extend(contents)
+        self.names_var.set(self.names)
+
+    def clear_files(self) -> None:
+        "Clear all contents and names of all files"
+
+        self.contents.clear()
+        self.names.clear()
+        self.names_var.set(self.names)
+        self.btn_remove.state(['disabled'])
+
+    def remove_files(self) -> None:
+        "Remove contents and names of the selected file in lb_files"
+
+        i = self.lb_files.curselection()[0]
+        if i == len(self.names) - 1: self.btn_remove.state(['disabled'])
+        del self.contents[i], self.names[i]
+        self.names_var.set(self.names)
+
+    @staticmethod
+    def _get_paths() -> list:
+        "Returns a list of strings representing paths for user-selected files"
+
+        paths = askopenfilenames(
+            title='Оберіть вхідний(і) файл(и) у кодуванні UTF-8',
+            filetypes=[('Файли Praat', '*.TextGrid'),
+                       ('Файли Elan', '*.eaf'),
+                       ('Файли Transcriber', '*.trs')]
+        )
+
+        return paths
+
+    @staticmethod
+    def _get_names(paths) -> list:
+        "Returns a list of file names extracted from paths"
+
+        return [InputFiles.RE_NAME.search(path).group() for path in paths]
+
+    @staticmethod
+    def _get_formats(names) -> list:
+        "Returns a list of file formats extracted from names"
+
+        formats = []
+
+        for name in names:
+            if InputFiles.RE_TXT.search(name):
+                formats.append('txt')
+            elif InputFiles.RE_XML.search(name):
+                formats.append('xml')
+
+        return formats
+
+    @staticmethod
+    def _read_files(paths, names, formats):
+        contents = []
+        unsupported = []
+
+        for p, n, f in zip(paths, names, formats):
+            with open(p, encoding='UTF-8') as inp_file:
+                try:
+                    if f == 'txt':
+                        contents.append(inp_file.read())
+                    elif f == 'xml':
+                        contents.append(ET.parse(inp_file))
+                except UnicodeDecodeError:
+                    unsupported.append(n)
+        
+        for u in unsupported: names.remove(u)
+
+        if unsupported:
+            messagebox.showerror(
+                title="Кодування не підтримується",
+                message=InputFiles.ENCOD_MSG.format(', '.join(unsupported))
+            )
+
+        return names, contents
+
+
+
+
+class Body(tk.Frame):
+
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        self.input_files = InputFiles(self, text="Вхідні файли")
+
+        self.input_files.pack()
+
+
+class Converter(tk.Tk):
+    """Represents AnnCo interface."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.title("AnnCo v2.0")
+        self.body = Body(self)
+
+        self.body.pack()
+
+    # RE_NAME = re.compile(r'[^/]+$')
+    # RE_TXT = re.compile(r'\.textgrid$', re.I)
+    # RE_XML = re.compile(r'\.(eaf|trs)$', re.I)
+    # ENCOD_MSG = ("Кодування обраного файлу не підтримується. Будь ласка, "
+    #              "збережіть файл у кодуванні UTF-8 або оберіть інший.")
+
+    # def __init__(self):
+    #     self.files = []
+
+    # def sel_files(self):
+    #     """Opens annotation file and returns its contents."""
+
+    #     self.files = askopenfiles(
+    #         title='Оберіть вхідний(і) файл(и) у кодуванні UTF-8',
+    #         filetypes=[('Файли Praat', '*.TextGrid'),
+    #                    ('Файли Elan', '*.eaf'),
+    #                    ('Файли Transcriber', '*.trs')]
+    #     )
+
+    # @property
+    # def _names(self):
+    #     return [self.RE_NAME.search(f.name).group(0) for f in self._files]
+
+    # @property
+    # def _formats(self):
+        
+
+    #     if self.RE_TXT.search(self.file_name):
+    #         self.file_format = 'txt'
+    #     elif self.RE_XML.search(self.file_name):
+    #         self.file_format = 'xml'
+
+    #     # lbl_name['text'] = file_name
+
+    #     with open(file_path, encoding='UTF-8') as ann_file:
+    #         try:
+    #             if self.file_format == 'txt':
+    #                 contents = ann_file.read()
+    #             elif self.file_format == 'xml':
+    #                 contents = ET.parse(ann_file)
+    #             return contents
+    #         except UnicodeDecodeError:
+    #             messagebox.showerror(title="Ой!", message=self.ENCOD_MSG)
+    #             return
 
     def test_convert(self, ext):
         """Test function to check functionality."""
 
-        contents = self.open_file()
+        contents = self.sel_files()
 
         if ext == 'tg':
             ann = Annotation.from_tg(contents)
@@ -658,18 +808,19 @@ class Converter:
         elif ext == 'trs':
             ann = Annotation.from_trs(contents)
 
-        # ann.to_eaf()
+        eaf_ann = ann.to_eaf()
 
-        tg_ann = ann.to_tg()
+        # tg_ann = ann.to_tg()
     
         filepath = asksaveasfilename(
-            defaultextension='TextGrid',
-            filetypes=[('Файли Praat', '*.TextGrid')]
+            defaultextension='eaf',
+            filetypes=[('Файли Elan', '*.eaf')],
         )
 
-        with open(filepath, 'w', encoding='UTF-8') as tg_file:
-            tg_file.write(tg_ann) 
+        # with open(filepath, 'w', encoding='UTF-8') as tg_file:
+        #     tg_file.write(tg_ann)
 
+        eaf_ann.write(filepath, 'UTF-8', xml_declaration=True)
         messagebox.showinfo(title='Ура!', message='Файл збережено!')
         # obj_to_eaf(ann.tiers, ann.duration)
 
@@ -677,6 +828,7 @@ class Converter:
 if __name__ == '__main__':
 
     annco = Converter()
-    annco.test_convert('tg')
+    annco.mainloop()
+    # annco.test_convert('tg')
     # annco.test_convert('eaf')
     # annco.test_convert('trs')

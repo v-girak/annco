@@ -6,7 +6,6 @@ import tests
 
 from tkinter import ttk, messagebox
 from tkinter.filedialog import askopenfilenames, asksaveasfilename
-from AnnCo_1 import obj_to_tg, obj_to_eaf
 
 
 class Interval:
@@ -598,7 +597,7 @@ class Annotation:
         )
 
 
-class InputFiles(ttk.Labelframe):
+class InputFrame(ttk.Labelframe):
     "Labelframe containing"
 
     RE_NAME = re.compile(r'[^/]+$')
@@ -611,13 +610,10 @@ class InputFiles(ttk.Labelframe):
         super().__init__(master, *args, **kwargs)
 
         self.names, self.contents = [], []
-        self.names_var = tk.StringVar(value=self.names)
+        self.names_var = tk.StringVar(self, value=self.names)
         self.lb_files = tk.Listbox(self, height=5, width=30, activestyle='none',
                                    listvariable=self.names_var)
-        self.lb_files.bind(
-            '<<ListboxSelect>>',
-            lambda x: self.btn_remove.state(['!disabled'])
-        )
+        self.lb_files.bind('<<ListboxSelect>>', self.btn_remove_state)
 
         self.sb_files = ttk.Scrollbar(self, orient=tk.VERTICAL,
                                       command=self.lb_files.yview)
@@ -667,9 +663,15 @@ class InputFiles(ttk.Labelframe):
         "Remove contents and names of the selected file in lb_files"
 
         i = self.lb_files.curselection()[0]
-        if i == len(self.names) - 1: self.btn_remove.state(['disabled'])
+        if i == len(self.names) - 1:
+            self.btn_remove.state(['disabled'])
         del self.contents[i], self.names[i]
         self.names_var.set(self.names)
+
+    def btn_remove_state(self, *args) -> None:
+        "Changes state of file remove button"
+
+        if self.names: self.btn_remove.state(['!disabled'])
 
     @staticmethod
     def _get_paths() -> list:
@@ -688,7 +690,7 @@ class InputFiles(ttk.Labelframe):
     def _get_names(paths) -> list:
         "Returns a list of file names extracted from paths"
 
-        return [InputFiles.RE_NAME.search(path).group() for path in paths]
+        return [InputFrame.RE_NAME.search(path).group() for path in paths]
 
     @staticmethod
     def _get_formats(names) -> list:
@@ -697,9 +699,9 @@ class InputFiles(ttk.Labelframe):
         formats = []
 
         for name in names:
-            if InputFiles.RE_TXT.search(name):
+            if InputFrame.RE_TXT.search(name):
                 formats.append('txt')
-            elif InputFiles.RE_XML.search(name):
+            elif InputFrame.RE_XML.search(name):
                 formats.append('xml')
 
         return formats
@@ -724,24 +726,120 @@ class InputFiles(ttk.Labelframe):
         if unsupported:
             messagebox.showerror(
                 title="Кодування не підтримується",
-                message=InputFiles.ENCOD_MSG.format(', '.join(unsupported))
+                message=InputFrame.ENCOD_MSG.format(', '.join(unsupported))
             )
 
         return names, contents
 
 
+class OutputFrame(ttk.Labelframe):
+
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+
+        self.format_var = tk.IntVar(self)
+        self.rb_tg = ttk.Radiobutton(self, text=".TextGrid (Praat)", value=1,
+                                     variable=self.format_var,
+                                     command=self.eaf_cb_state)
+        self.rb_eaf = ttk.Radiobutton(self, text=".eaf (Elan)", value=2,
+                                      variable=self.format_var,
+                                      command=self.eaf_cb_state)
+
+        self.incl_empty_var = tk.BooleanVar(self)
+        self.cb_incl_empty = ttk.Checkbutton(self, variable=self.incl_empty_var,
+                                             offvalue=0, onvalue=1, state='disabled',
+                                             text="Включити порожні інтервали")
+
+        self._layout()
+
+    def eaf_cb_state(self) -> None:
+        "Changes state of checkbuttons for .eaf output format"
+        
+        if self.format_var.get() == 1:
+            self.cb_incl_empty.config(state='disabled')
+        elif self.format_var.get() == 2:
+            self.cb_incl_empty.config(state='active')
+
+    def _layout(self) -> None:
+
+        self.rb_tg.pack()
+        self.rb_eaf.pack()
+        self.cb_incl_empty.pack()
+
+    
+class ConvertFrame(tk.Frame):
+
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+
+        self.btn_convert = ttk.Button(self, default='active',
+                                      command=self.convert,
+                                      text="Конвертувати всі")
+
+        self._layout()
+
+    def convert(self) -> None:
+        "Converts, duh"
+
+        names = self.master.input_frame.names
+        contents = self.master.input_frame.contents
+        sel_fmt = self.master.output_frame.format_var.get()
+
+        if names and sel_fmt:
+            for name, contents in zip(names, contents):
+
+                if name.lower().endswith('.textgrid'):
+                    ann = Annotation.from_tg(contents)
+                elif name.lower().endswith('.eaf'):
+                    ann = Annotation.from_eaf(contents)
+                elif name.lower().endswith('.trs'):
+                    ann = Annotation.from_trs(contents)
+
+                if sel_fmt == 1:
+                    save_path = asksaveasfilename(
+                        defaultextension="TextGrid",
+                        filetypes=[("Файли Praat", "*.TextGrid")]
+                    )
+                elif sel_fmt == 2:
+                    save_path = asksaveasfilename(
+                        defaultextension="eaf",
+                        filetypes=[("Файли Elan", "*.eaf")]
+                    )
+
+                if save_path.endswith(".TextGrid"):
+                    with open(save_path, 'w', encoding='UTF-8') as sf:
+                        sf.write(ann.to_tg())
+                elif save_path.endswith(".eaf"):
+                    ann.to_eaf().write(save_path, 'UTF-8', xml_declaration=True)
+
+            messagebox.showinfo(title="Готово!", message="Готово!")
+
+        else:
+            messagebox.showerror(
+                title="Чогось не вистачає...",
+                message="Оберіть вхідний(і) файл(и) та кінцевий формат."
+            )
+
+    def _layout(self):
+        "Lays out"
+
+        self.btn_convert.pack()
 
 
 class Body(tk.Frame):
 
     def __init__(self, master, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
-        self.input_files = InputFiles(self, text="Вхідні файли")
+        self.input_frame = InputFrame(self, text="Вхідні файли")
+        self.output_frame = OutputFrame(self, text="Кінцевий формат")
+        self.convert_frame = ConvertFrame(self)
 
-        self.input_files.pack()
+        self.input_frame.pack()
+        self.output_frame.pack()
+        self.convert_frame.pack()
 
 
-class Converter(tk.Tk):
+class Interface(tk.Tk):
     """Represents AnnCo interface."""
 
     def __init__(self, *args, **kwargs) -> None:
@@ -751,84 +849,7 @@ class Converter(tk.Tk):
 
         self.body.pack()
 
-    # RE_NAME = re.compile(r'[^/]+$')
-    # RE_TXT = re.compile(r'\.textgrid$', re.I)
-    # RE_XML = re.compile(r'\.(eaf|trs)$', re.I)
-    # ENCOD_MSG = ("Кодування обраного файлу не підтримується. Будь ласка, "
-    #              "збережіть файл у кодуванні UTF-8 або оберіть інший.")
-
-    # def __init__(self):
-    #     self.files = []
-
-    # def sel_files(self):
-    #     """Opens annotation file and returns its contents."""
-
-    #     self.files = askopenfiles(
-    #         title='Оберіть вхідний(і) файл(и) у кодуванні UTF-8',
-    #         filetypes=[('Файли Praat', '*.TextGrid'),
-    #                    ('Файли Elan', '*.eaf'),
-    #                    ('Файли Transcriber', '*.trs')]
-    #     )
-
-    # @property
-    # def _names(self):
-    #     return [self.RE_NAME.search(f.name).group(0) for f in self._files]
-
-    # @property
-    # def _formats(self):
-        
-
-    #     if self.RE_TXT.search(self.file_name):
-    #         self.file_format = 'txt'
-    #     elif self.RE_XML.search(self.file_name):
-    #         self.file_format = 'xml'
-
-    #     # lbl_name['text'] = file_name
-
-    #     with open(file_path, encoding='UTF-8') as ann_file:
-    #         try:
-    #             if self.file_format == 'txt':
-    #                 contents = ann_file.read()
-    #             elif self.file_format == 'xml':
-    #                 contents = ET.parse(ann_file)
-    #             return contents
-    #         except UnicodeDecodeError:
-    #             messagebox.showerror(title="Ой!", message=self.ENCOD_MSG)
-    #             return
-
-    def test_convert(self, ext):
-        """Test function to check functionality."""
-
-        contents = self.sel_files()
-
-        if ext == 'tg':
-            ann = Annotation.from_tg(contents)
-        elif ext == 'eaf':
-            ann = Annotation.from_eaf(contents)
-        elif ext == 'trs':
-            ann = Annotation.from_trs(contents)
-
-        eaf_ann = ann.to_eaf()
-
-        # tg_ann = ann.to_tg()
-    
-        filepath = asksaveasfilename(
-            defaultextension='eaf',
-            filetypes=[('Файли Elan', '*.eaf')],
-        )
-
-        # with open(filepath, 'w', encoding='UTF-8') as tg_file:
-        #     tg_file.write(tg_ann)
-
-        eaf_ann.write(filepath, 'UTF-8', xml_declaration=True)
-        messagebox.showinfo(title='Ура!', message='Файл збережено!')
-        # obj_to_eaf(ann.tiers, ann.duration)
-
 
 if __name__ == '__main__':
-
-    annco = Converter()
-    annco.mainloop()
-    # annco.test_convert('tg')
-    # annco.test_convert('eaf')
-    # annco.test_convert('trs')
+    interface = Interface()
+    interface.mainloop()

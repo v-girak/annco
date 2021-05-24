@@ -122,10 +122,14 @@ class Tier:
         tier_el = ET.SubElement(root, 'TIER', {'LINGUISTIC_TYPE_REF': 'default-lt',
                                                'TIER_ID': self.name})
 
-        for i, interval in enumerate(self, start=1):
-            if not interval.text:
-                continue
-            interval.to_eaf(i, tier_el)
+        if interface.body.output_frame.incl_empty_var.get():
+            for i, interval in enumerate(self, start=1):
+                interval.to_eaf(i, tier_el)
+        else:
+            for i, interval in enumerate(self, start=1):
+                if not interval.text:
+                    continue
+                interval.to_eaf(i, tier_el)
 
 
 class Annotation:
@@ -503,12 +507,18 @@ class Annotation:
 
         time_values = []
 
-        for tier in self:
-            for interval in tier:
-                if not interval.text:
-                    continue
-                time_values.append(interval.eaf_start)
-                time_values.append(interval.eaf_end)
+        if interface.body.output_frame.incl_empty_var.get():
+            for tier in self:
+                for interval in tier:
+                    time_values.append(interval.eaf_start)
+                    time_values.append(interval.eaf_end)
+        else:
+            for tier in self:
+                for interval in tier:
+                    if not interval.text:
+                        continue
+                    time_values.append(interval.eaf_start)
+                    time_values.append(interval.eaf_end)
         
         time_values.sort()
 
@@ -845,7 +855,7 @@ class Interface(tk.Tk):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.title("AnnCo v2.0")
-        self.body = Body(self)
+        self.body = Body(self, padx=10, pady=10)
 
         self.body.pack()
 

@@ -300,8 +300,11 @@ class Annotation:
             with wave.open(wav_path[8:], 'rb') as wav:
                 duration = wav.getnframes() / wav.getframerate()
         except Exception:
-            last_time = int(root.find('TIME_ORDER')[-1].get('TIME_VALUE')) / 1000
-            duration = last_time if last_time > 300.0 else 300.0
+            try:
+                last_time = int(root.find('TIME_ORDER')[-1].get('TIME_VALUE')) / 1000
+                duration = last_time if last_time > 300.0 else 300.0
+            except IndexError:
+                duration = 300.0
 
         return duration
 
@@ -673,7 +676,7 @@ class InputFrame(ttk.Labelframe):
 
         self.names, self.contents = [], []
         self.names_var = tk.StringVar(self, value=self.names)
-        self.lb_files = tk.Listbox(self, height=5, width=30, activestyle='none',
+        self.lb_files = tk.Listbox(self, height=10, width=40, activestyle='none',
                                    listvariable=self.names_var)
         self.lb_files.bind('<<ListboxSelect>>', self.btn_remove_state)
 
@@ -681,14 +684,14 @@ class InputFrame(ttk.Labelframe):
                                       command=self.lb_files.yview)
         self.lb_files['yscrollcommand'] = self.sb_files.set
 
-        self.btn_select = ttk.Button(self, text="Обрати файли",
+        self.btn_select = ttk.Button(self, text="Обрати файли", width=14,
                                      command=self.select_files)
 
-        self.btn_clear = ttk.Button(self, text="Очистити все",
+        self.btn_clear = ttk.Button(self, text="Очистити все", width=14,
                                     command=self.clear_files)
 
         self.btn_remove = ttk.Button(self, text="Видалити",
-                                     command=self.remove_files,
+                                     command=self.remove_files, width=14,
                                      state='disabled')
 
         self._layout()
@@ -698,9 +701,9 @@ class InputFrame(ttk.Labelframe):
 
         self.lb_files.pack(side=tk.LEFT)
         self.sb_files.pack(side=tk.LEFT, fill=tk.Y)
-        self.btn_select.pack()
-        self.btn_clear.pack()
-        self.btn_remove.pack()
+        self.btn_select.pack(padx=10)
+        self.btn_clear.pack(padx=10, pady=3)
+        self.btn_remove.pack(padx=10)
     
     def select_files(self) -> None:
         "Extracts contents from user selected files and updates file names"
@@ -810,12 +813,12 @@ class OutputFrame(ttk.Labelframe):
         self.incl_empty_var = tk.BooleanVar(self)
         self.cb_incl_empty = ttk.Checkbutton(self, variable=self.incl_empty_var,
                                              offvalue=0, onvalue=1, state='disabled',
-                                             text="Включити порожні інтервали")
+                                             text="Порожні інтервали")
 
         self.incl_point_var = tk.BooleanVar(self)
         self.cb_incl_point = ttk.Checkbutton(self, variable=self.incl_point_var,
                                              offvalue=0, onvalue=1, state='disabled',
-                                             text="Включити точкові рівні") 
+                                             text="Точкові рівні") 
 
         self._layout()
 
@@ -831,10 +834,10 @@ class OutputFrame(ttk.Labelframe):
 
     def _layout(self) -> None:
 
-        self.rb_tg.pack()
-        self.rb_eaf.pack()
-        self.cb_incl_empty.pack()
-        self.cb_incl_point.pack()
+        self.rb_tg.grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        self.rb_eaf.grid(row=1, column=0, sticky='w', padx=5, pady=2)
+        self.cb_incl_empty.grid(row=1, column=1, sticky='w', padx=5)
+        self.cb_incl_point.grid(row=1, column=2, sticky='w', padx=5)
 
     
 class ConvertFrame(tk.Frame):
@@ -842,9 +845,14 @@ class ConvertFrame(tk.Frame):
     def __init__(self, master, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
 
-        self.btn_convert = ttk.Button(self, default='active',
+        self.btn_convert = ttk.Button(self, default='active', width=18,
                                       command=self.convert,
-                                      text="Конвертувати всі")
+                                      text="Конвертувати все")
+
+        # self.maximum = float(len(self.master.input_frame.names))
+        # self.pb_convert = ttk.Progressbar(self, orient=tk.HORIZONTAL,
+        #                                   length=261, mode='determinate',
+        #                                   value=0.0, maximum=self.maximum)
 
         self._layout()
 
@@ -867,11 +875,13 @@ class ConvertFrame(tk.Frame):
 
                 if sel_fmt == 1:
                     save_path = asksaveasfilename(
+                        title="Збережіть результат конвертації " + name,
                         defaultextension="TextGrid",
-                        filetypes=[("Файли Praat", "*.TextGrid")]
+                        filetypes=[("Файли Praat", "*.TextGrid")],
                     )
                 elif sel_fmt == 2:
                     save_path = asksaveasfilename(
+                        title="Збережіть результат конвертації " + name,
                         defaultextension="eaf",
                         filetypes=[("Файли Elan", "*.eaf")]
                     )
@@ -882,7 +892,20 @@ class ConvertFrame(tk.Frame):
                 elif save_path.endswith(".eaf"):
                     ann.to_eaf().write(save_path, 'UTF-8', xml_declaration=True)
 
+            # self.pb_convert.step()
             messagebox.showinfo(title="Готово!", message="Готово!")
+
+        elif not names and sel_fmt:
+            messagebox.showerror(
+                title="Чогось не вистачає...",
+                message="Оберіть вхідний(і) файл(и)."
+            )
+
+        elif names and not sel_fmt:
+            messagebox.showerror(
+                title="Чогось не вистачає...",
+                message="Оберіть кінцевий формат."
+            )
 
         else:
             messagebox.showerror(
@@ -893,20 +916,24 @@ class ConvertFrame(tk.Frame):
     def _layout(self):
         "Lays out"
 
+        self.btn_convert.grid(row=0, column=1, sticky='e')
         self.btn_convert.pack()
+        # self.pb_convert.grid(row=0, column=1, sticky='e', padx=5)
 
 
 class Body(tk.Frame):
 
     def __init__(self, master, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
-        self.input_frame = InputFrame(self, text="Вхідні файли")
-        self.output_frame = OutputFrame(self, text="Кінцевий формат")
+        self.input_frame = InputFrame(self, text="Вхідні файли",
+                                      padding=5)
+        self.output_frame = OutputFrame(self, text="Кінцевий формат",
+                                        padding=12)
         self.convert_frame = ConvertFrame(self)
 
         self.input_frame.pack()
-        self.output_frame.pack()
-        self.convert_frame.pack()
+        self.output_frame.pack(pady=15)
+        self.convert_frame.pack(side=tk.RIGHT)
 
 
 class Interface(tk.Tk):
@@ -915,7 +942,7 @@ class Interface(tk.Tk):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.title("AnnCo v2.0")
-        self.body = Body(self, padx=10, pady=10)
+        self.body = Body(self, padx=15, pady=15)
 
         self.body.pack()
 

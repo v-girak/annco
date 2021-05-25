@@ -43,12 +43,19 @@ class Interval:
     def to_tg(self, i) -> str:
         "Returns a string representing interval in .TextGrid file"
 
-        tg_interval = (
-            f"        intervals [{i}]:\n"
-            f"            xmin = {self.start}\n"
-            f"            xmax = {self.end}\n"
-            f"            text = \"{self.text}\"\n"
-        )
+        if self.start != self.end:
+            tg_interval = (
+                f"        intervals [{i}]:\n"
+                f"            xmin = {self.start}\n"
+                f"            xmax = {self.end}\n"
+                f"            text = \"{self.text}\"\n"
+            )
+        else:
+            tg_interval = (
+                f"        points [{i}]:\n"
+                f"            number = {self.start}\n"
+                f"            mark = \"{self.text}\"\n"
+            )
 
         return tg_interval
 
@@ -68,12 +75,13 @@ class Interval:
 class Tier:
     """Represents annotation tier containing its intervals."""
 
-    def __init__(self, name, intervals=None):
+    def __init__(self, name, intervals=None, is_point=False):
         self.name = name
         if intervals is None:
             self.intervals = []
         else:
             self.intervals = intervals
+        self.is_point = is_point
         self._index = 0
 
     def __repr__(self):
@@ -99,17 +107,55 @@ class Tier:
     def __getitem__(self, index):
         return self.intervals[index]
 
-    def to_tg(self, t) -> str:
+    def extend_points(self, duration) -> None:
+        """If the tier is not empty, extends intervals ends
+        to starts of intervals following them or to duration"""
+
+        if self.intervals:
+            for i in range(len(self) - 1):
+                self[i].end = self[i+1].start
+            self[-1].end = duration
+
+    def fill_gaps(self, duration) -> None:
+        "Fills gaps between intervals and tier boundaries with empty text intervals"
+
+        if self.intervals:
+
+            for i in range(len(self) - 1):
+                if self[i].end < self[i+1].start:
+                    self.intervals.insert(
+                        i+1, Interval(self[i].end, self[i+1].start)
+                    )
+
+            if self[0].start > 0:
+                self.intervals.insert(0, Interval(0, self[0].start))
+            if self[-1].end < duration:
+                self.intervals.append(Interval(self[-1].end, duration))
+
+        else:
+            self.intervals.append(Interval(0, duration))
+
+    def to_tg(self, t, end) -> str:
         "Returns a string representing tier in a .TextGrid file"
 
-        tg_tier = (
-            f"    item [{t}]:\n"
-             "        class = \"IntervalTier\"\n"
-            f"        name = \"{self.name}\"\n"
-            f"        xmin = {self[0].start}\n"
-            f"        xmax = {self[-1].end}\n"
-            f"        intervals: size = {len(self)}\n"
-        )
+        if not self.is_point:
+            tg_tier = (
+                f"    item [{t}]:\n"
+                "        class = \"IntervalTier\"\n"
+                f"        name = \"{self.name}\"\n"
+                f"        xmin = 0\n"
+                f"        xmax = {end}\n"
+                f"        intervals: size = {len(self)}\n"
+            )
+        else:
+            tg_tier = (
+                f"    item [{t}]:\n"
+                "        class = \"TextTier\"\n"
+                f"        name = \"{self.name}\"\n"
+                f"        xmin = 0\n"
+                f"        xmax = {end}\n"
+                f"        points: size = {len(self)}\n"
+            )
 
         for i, interval in enumerate(self, start=1):
             tg_tier += interval.to_tg(i)
@@ -164,29 +210,38 @@ class Annotation:
     def from_tg(cls, contents):
         """Creates Annotation instance from .TextGrid file contents."""
 
-        RE_TIER = re.compile(r'name = "(.*?)"\s+')
-        RE_START = re.compile(r'xmin = ([\d.]+)')
-        RE_END = re.compile(r'xmax = ([\d.]+)')
+        RE_NAME = re.compile(r'name = "(.*?)"\s+')
+        RE_XMIN = re.compile(r'xmin = ([\d.]+)')
+        RE_XMAX = re.compile(r'xmax = ([\d.]+)')
+        RE_NUMB = re.compile(r'number = ([\d.]+)')
         RE_TEXT = re.compile(r'text = "(.*?)"\s+', re.S)
+        RE_MARK = re.compile(r'mark = "(.*?)"\s+', re.S)
 
         textgrid = contents[contents.find('item [1]:'):]
         tg_tiers = re.split(r'item \[\d+\]:', textgrid)[1:]
 
-        duration = float(RE_END.search(textgrid).group(1))
+        duration = float(RE_XMAX.search(textgrid).group(1))
 
         tiers = []
         for t in tg_tiers:
-            if not re.search(r"IntervalTier", t):
-                continue
+            if re.search(r"IntervalTier", t):
+                starts = [float(start) for start in RE_XMIN.findall(t)][1:]
+                ends = [float(end) for end in RE_XMAX.findall(t)][1:]
+                texts = [text.strip() for text in RE_TEXT.findall(t)]
+                name = RE_NAME.search(t).group(1)
+                tups = zip(starts, ends, texts)
 
-            starts = [float(start) for start in RE_START.findall(t)][1:]
-            ends = [float(end) for end in RE_END.findall(t)][1:]
-            texts = [text.strip() for text in RE_TEXT.findall(t)]
-            name = RE_TIER.search(t).group(1)
-            tups = zip(starts, ends, texts)
+                intervals = [Interval(start, end, text) for (start, end, text) in tups]
+                tiers.append(Tier(name, intervals))
 
-            intervals = [Interval(start, end, text) for (start, end, text) in tups]
-            tiers.append(Tier(name, intervals))
+            elif re.search(r"TextTier", t):
+                times = [float(time) for time in RE_NUMB.findall(t)]
+                texts = [text.strip() for text in RE_MARK.findall(t)]
+                name = RE_NAME.search(t).group(1)
+                tups = zip(times, texts)
+
+                intervals = [Interval(time, time, text) for time, text in tups]
+                tiers.append(Tier(name, intervals, is_point=True))
 
         return cls(tiers, duration)
 
@@ -222,8 +277,11 @@ class Annotation:
         cls._set_ends(transcription, duration)
         cls._set_ends(background, duration)
 
-        tiers = [Tier('Теми', sections), Tier('Мовці', turns),
-                 Tier('Транскрипція', transcription)]
+        tiers = [
+            Tier('Теми', sections),
+            Tier('Мовці', turns),
+            Tier('Транскрипція', transcription)
+        ]
         if background:
             tiers.append(Tier('Фон', background))
 
@@ -403,7 +461,8 @@ class Annotation:
                 if el.get('extent') == 'previous':
                     transcription[-1].text += f" +[{desc}] {text}"
 
-        # if base interval text was empty & formatted str was appended:
+        # if the initial interval text was empty and a formatted string
+        # with leading space was appended
         for interval in transcription:
             interval.text = interval.text.strip()
 
@@ -421,7 +480,9 @@ class Annotation:
     def to_tg(self) -> str:
         "Returns a string representing Annotation to be written into .TextGrid"
 
-        self._fill_spaces()
+        for tier in self:
+            if not tier.is_point:
+                tier.fill_gaps(self.duration)
 
         tg_ann = (
             "File type = \"ooTextFile\"\n"
@@ -434,29 +495,21 @@ class Annotation:
         )
 
         for t, tier in enumerate(self, start=1):
-            tg_ann += tier.to_tg(t)
+            tg_ann += tier.to_tg(t, self.duration)
 
         return tg_ann
-
-    def _fill_spaces(self) -> None:
-        "Fills empty spaces between intervals and tier boundaries on all tiers."
-
-        for tier in self:
-            for i in range(len(tier)-1):
-                if tier[i].end < tier[i+1].start:
-                    tier.intervals.insert(
-                        i+1, Interval(tier[i].end, tier[i+1].start, '')
-                    )
-
-            if tier.intervals:
-                if tier[0].start > 0:
-                    tier.intervals.insert(0, Interval(0, tier[0].start, ''))
-                if tier[-1].end < self.duration:
-                    tier.intervals.append(Interval(tier[-1].end, self.duration, ''))
 
     def to_eaf(self) -> ET.ElementTree:
         "Returns an Element Tree representing Annotation to be written into .eaf"
 
+        # if include point intervals checkbutton is toggled
+        if interface.body.output_frame.incl_point_var.get():
+            for tier in self:
+                if tier.is_point:
+                    tier.extend_points(self.duration)
+        else:
+            self.tiers = [tier for tier in self if not tier.is_point]
+ 
         ann_doc = self._eaf_root()
         ann_tree = ET.ElementTree(ann_doc)
 
@@ -470,8 +523,6 @@ class Annotation:
         self._symb_sub(ann_doc)
         self._symb_assoc(ann_doc)
         self._incl_in(ann_doc)
-
-        # tests.readable(ann_tree)
 
         return ann_tree
 
@@ -507,6 +558,7 @@ class Annotation:
 
         time_values = []
 
+        # if include empty intervals checkbutton is toggled
         if interface.body.output_frame.incl_empty_var.get():
             for tier in self:
                 for interval in tier:
@@ -760,6 +812,11 @@ class OutputFrame(ttk.Labelframe):
                                              offvalue=0, onvalue=1, state='disabled',
                                              text="Включити порожні інтервали")
 
+        self.incl_point_var = tk.BooleanVar(self)
+        self.cb_incl_point = ttk.Checkbutton(self, variable=self.incl_point_var,
+                                             offvalue=0, onvalue=1, state='disabled',
+                                             text="Включити точкові рівні") 
+
         self._layout()
 
     def eaf_cb_state(self) -> None:
@@ -767,14 +824,17 @@ class OutputFrame(ttk.Labelframe):
         
         if self.format_var.get() == 1:
             self.cb_incl_empty.config(state='disabled')
+            self.cb_incl_point.config(state='disabled')
         elif self.format_var.get() == 2:
             self.cb_incl_empty.config(state='active')
+            self.cb_incl_point.config(state='active')
 
     def _layout(self) -> None:
 
         self.rb_tg.pack()
         self.rb_eaf.pack()
         self.cb_incl_empty.pack()
+        self.cb_incl_point.pack()
 
     
 class ConvertFrame(tk.Frame):

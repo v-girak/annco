@@ -849,11 +849,6 @@ class ConvertFrame(tk.Frame):
                                       command=self.convert,
                                       text="Конвертувати все")
 
-        # self.maximum = float(len(self.master.input_frame.names))
-        # self.pb_convert = ttk.Progressbar(self, orient=tk.HORIZONTAL,
-        #                                   length=261, mode='determinate',
-        #                                   value=0.0, maximum=self.maximum)
-
         self._layout()
 
     def convert(self) -> None:
@@ -892,7 +887,6 @@ class ConvertFrame(tk.Frame):
                 elif save_path.endswith(".eaf"):
                     ann.to_eaf().write(save_path, 'UTF-8', xml_declaration=True)
 
-            # self.pb_convert.step()
             messagebox.showinfo(title="Готово!", message="Готово!")
 
         elif not names and sel_fmt:
@@ -918,7 +912,6 @@ class ConvertFrame(tk.Frame):
 
         self.btn_convert.grid(row=0, column=1, sticky='e')
         self.btn_convert.pack()
-        # self.pb_convert.grid(row=0, column=1, sticky='e', padx=5)
 
 
 class Body(tk.Frame):

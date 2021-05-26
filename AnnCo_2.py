@@ -1,20 +1,23 @@
 import re
 import wave
 import xml.etree.ElementTree as ET
-import xml.dom.minidom as MD
 import tkinter as tk
+import tests
 
 from tkinter import ttk, messagebox
-from tkinter.filedialog import askopenfilename, asksaveasfilename
+from tkinter.filedialog import askopenfilenames, asksaveasfilename
 
 
 class Interval:
     """Represents annotation interval."""
 
-    def __init__(self, start: float, end: float, text):
+    def __init__(self, start: float, end: float, text=None):
         self.start = start
         self.end = end
-        self.text = text
+        if text is None:
+            self.text = ''
+        else:
+            self.text = text
 
     def __repr__(self):
         return f'Interval({self.start}, {self.end}, {self.text})'
@@ -25,16 +28,61 @@ class Interval:
     def __len__(self):
         return self.end - self.start
 
+    @property
+    def eaf_start(self) -> int:
+        "Returns interval start value formatted for .eaf"
+
+        return int(round(self.start, 3) * 1000)
+
+    @property
+    def eaf_end(self) -> int:
+        "Returns interval end value formatted for .eaf"
+
+        return int(round(self.end, 3) * 1000)
+
+    def to_tg(self, i) -> str:
+        "Returns a string representing interval in .TextGrid file"
+
+        if self.start != self.end:
+            tg_interval = (
+                f"        intervals [{i}]:\n"
+                f"            xmin = {self.start}\n"
+                f"            xmax = {self.end}\n"
+                f"            text = \"{self.text}\"\n"
+            )
+        else:
+            tg_interval = (
+                f"        points [{i}]:\n"
+                f"            number = {self.start}\n"
+                f"            mark = \"{self.text}\"\n"
+            )
+
+        return tg_interval
+
+    def to_eaf(self, i, tier_el) -> None:
+        "Creates ANNOTATION element representing interval in .eaf file"
+
+        ann_el = ET.SubElement(tier_el, 'ANNOTATION')
+
+        align_ann = ET.SubElement(ann_el, 'ALIGNABLE_ANNOTATION',
+                                  {'ANNOTATION_ID': 'a' + str(i),
+                                   'TIME_SLOT_REF1': str(self.eaf_start),
+                                   'TIME_SLOT_REF2': str(self.eaf_end)})
+
+        ET.SubElement(align_ann, 'ANNOTATION_VALUE').text = self.text
+
 
 class Tier:
     """Represents annotation tier containing its intervals."""
 
-    def __init__(self, name, intervals=None):
+    def __init__(self, name, intervals=None, is_point=False):
         self.name = name
         if intervals is None:
             self.intervals = []
         else:
             self.intervals = intervals
+        self.is_point = is_point
+        self._index = 0
 
     def __repr__(self):
         return f'Tier({self.name}, intervals)'
@@ -45,6 +93,90 @@ class Tier:
     def __len__(self):
         return len(self.intervals)
 
+    def __iter__(self):
+        self._index = 0
+        return self
+
+    def __next__(self):
+        if self._index >= len(self.intervals):
+            raise StopIteration
+        i = self._index
+        self._index += 1
+        return self.intervals[i]
+
+    def __getitem__(self, index):
+        return self.intervals[index]
+
+    def extend_points(self, duration) -> None:
+        """If the tier is not empty, extends intervals ends
+        to starts of intervals following them or to duration"""
+
+        if self.intervals:
+            for i in range(len(self) - 1):
+                self[i].end = self[i+1].start
+            self[-1].end = duration
+
+    def fill_gaps(self, duration) -> None:
+        "Fills gaps between intervals and tier boundaries with empty text intervals"
+
+        if self.intervals:
+
+            for i in range(len(self) - 1):
+                if self[i].end < self[i+1].start:
+                    self.intervals.insert(
+                        i+1, Interval(self[i].end, self[i+1].start)
+                    )
+
+            if self[0].start > 0:
+                self.intervals.insert(0, Interval(0, self[0].start))
+            if self[-1].end < duration:
+                self.intervals.append(Interval(self[-1].end, duration))
+
+        else:
+            self.intervals.append(Interval(0, duration))
+
+    def to_tg(self, t, end) -> str:
+        "Returns a string representing tier in a .TextGrid file"
+
+        if not self.is_point:
+            tg_tier = (
+                f"    item [{t}]:\n"
+                "        class = \"IntervalTier\"\n"
+                f"        name = \"{self.name}\"\n"
+                f"        xmin = 0\n"
+                f"        xmax = {end}\n"
+                f"        intervals: size = {len(self)}\n"
+            )
+        else:
+            tg_tier = (
+                f"    item [{t}]:\n"
+                "        class = \"TextTier\"\n"
+                f"        name = \"{self.name}\"\n"
+                f"        xmin = 0\n"
+                f"        xmax = {end}\n"
+                f"        points: size = {len(self)}\n"
+            )
+
+        for i, interval in enumerate(self, start=1):
+            tg_tier += interval.to_tg(i)
+
+        return tg_tier
+
+    def to_eaf(self, root) -> None:
+        "Creates TIER element representing tier in .eaf file"
+
+        tier_el = ET.SubElement(root, 'TIER', {'LINGUISTIC_TYPE_REF': 'default-lt',
+                                               'TIER_ID': self.name})
+
+        if interface.body.output_frame.incl_empty_var.get():
+            for i, interval in enumerate(self, start=1):
+                interval.to_eaf(i, tier_el)
+        else:
+            for i, interval in enumerate(self, start=1):
+                if not interval.text:
+                    continue
+                interval.to_eaf(i, tier_el)
+
 
 class Annotation:
     """Represents entire annotation."""
@@ -52,37 +184,64 @@ class Annotation:
     def __init__(self, tiers, duration: float):
         self.tiers = tiers
         self.duration = duration
+        self._index = 0
 
     def __str__(self):
         return f"Annotation contains {len(self.tiers)} tiers."
+
+    def __len__(self):
+        return len(self.tiers)
+
+    def __iter__(self):
+        self._index = 0
+        return self
+
+    def __next__(self):
+        if self._index >= len(self.tiers):
+            raise StopIteration
+        i = self._index
+        self._index += 1
+        return self.tiers[i]
+
+    def __getitem__(self, index):
+        return self.tiers[index]
     
     @classmethod
     def from_tg(cls, contents):
         """Creates Annotation instance from .TextGrid file contents."""
 
-        RE_TIER = re.compile(r'name = "(.*?)"\s+')
-        RE_START = re.compile(r'xmin = ([\d.]+)')
-        RE_END = re.compile(r'xmax = ([\d.]+)')
-        RE_TEXT = re.compile(r'text = "(.*?)"\s+')
+        RE_NAME = re.compile(r'name = "(.*?)"\s+')
+        RE_XMIN = re.compile(r'xmin = ([\d.]+)')
+        RE_XMAX = re.compile(r'xmax = ([\d.]+)')
+        RE_NUMB = re.compile(r'number = ([\d.]+)')
+        RE_TEXT = re.compile(r'text = "(.*?)"\s+', re.S)
+        RE_MARK = re.compile(r'mark = "(.*?)"\s+', re.S)
 
         textgrid = contents[contents.find('item [1]:'):]
         tg_tiers = re.split(r'item \[\d+\]:', textgrid)[1:]
 
-        duration = float(RE_END.search(textgrid).group(1))
+        duration = float(RE_XMAX.search(textgrid).group(1))
 
         tiers = []
         for t in tg_tiers:
-            if not re.search(r"IntervalTier", t):
-                continue
+            if re.search(r"IntervalTier", t):
+                starts = [float(start) for start in RE_XMIN.findall(t)][1:]
+                ends = [float(end) for end in RE_XMAX.findall(t)][1:]
+                texts = [text.strip() for text in RE_TEXT.findall(t)]
+                name = RE_NAME.search(t).group(1)
+                tups = zip(starts, ends, texts)
 
-            starts = [float(start) for start in RE_START.findall(t)][1:]
-            ends = [float(end) for end in RE_END.findall(t)][1:]
-            texts = [text.strip() for text in RE_TEXT.findall(t)]
-            name = RE_TIER.search(t).group(1)
-            tups = zip(starts, ends, texts)
+                intervals = [Interval(start, end, text) for (start, end, text) in tups]
+                tiers.append(Tier(name, intervals))
 
-            intervals = [Interval(start, end, text) for (start, end, text) in tups]
-            tiers.append(Tier(name, intervals))
+            elif re.search(r"TextTier", t):
+                times = [float(time) for time in RE_NUMB.findall(t)]
+                texts = [text.strip() for text in RE_MARK.findall(t)]
+                name = RE_NAME.search(t).group(1)
+                tups = zip(times, texts)
+
+                intervals = [Interval(time, time, text) for time, text in tups]
+                tiers.append(Tier(name, intervals, is_point=True))
 
         return cls(tiers, duration)
 
@@ -94,8 +253,8 @@ class Annotation:
         duration = cls._get_duration(ann_doc)
 
         align_anns = ann_doc.findall('.//ALIGNABLE_ANNOTATION')
-        ann_doc = cls._insert_align_ann_times(ann_doc, align_anns)
-        ann_doc = cls._insert_ref_ann_times(ann_doc, align_anns)
+        cls._insert_align_ann_times(ann_doc, align_anns)
+        cls._insert_ref_ann_times(ann_doc, align_anns)
 
         tiers = cls._get_tiers(ann_doc)
 
@@ -106,8 +265,8 @@ class Annotation:
         """Creates Annotation instance from .trs file contents."""
 
         trans = contents.getroot()
-        trans = cls._insert_topics(trans)
-        trans = cls._insert_speakers(trans)
+        cls._insert_topics(trans)
+        cls._insert_speakers(trans)
 
         sections = cls._get_sections(trans)
         turns = cls._get_turns(trans)
@@ -118,8 +277,11 @@ class Annotation:
         cls._set_ends(transcription, duration)
         cls._set_ends(background, duration)
 
-        tiers = [Tier('Теми', sections), Tier('Мовці', turns),
-                 Tier('Транскрипція', transcription)]
+        tiers = [
+            Tier('Теми', sections),
+            Tier('Мовці', turns),
+            Tier('Транскрипція', transcription)
+        ]
         if background:
             tiers.append(Tier('Фон', background))
 
@@ -137,13 +299,17 @@ class Annotation:
             wav_path = root.find('HEADER/MEDIA_DESCRIPTOR').get('MEDIA_URL')
             with wave.open(wav_path[8:], 'rb') as wav:
                 duration = wav.getnframes() / wav.getframerate()
-        except:
-            duration = int(root.find('TIME_ORDER')[-1].get('TIME_VALUE')) / 1000
+        except Exception:
+            try:
+                last_time = int(root.find('TIME_ORDER')[-1].get('TIME_VALUE')) / 1000
+                duration = last_time if last_time > 300.0 else 300.0
+            except IndexError:
+                duration = 300.0
 
         return duration
 
     @staticmethod
-    def _insert_align_ann_times(root, annotations) -> ET.Element:
+    def _insert_align_ann_times(root, annotations) -> None:
         """Replaces .eaf alignable annotations' time references with times."""
 
         for ann in annotations:
@@ -155,10 +321,8 @@ class Annotation:
                 if ann.get('TIME_SLOT_REF2') == slot.get('TIME_SLOT_ID'):
                     ann.set('TIME_SLOT_REF2', int(slot.get('TIME_VALUE')) / 1000)
 
-        return root
-
     @staticmethod
-    def _insert_ref_ann_times(root, annotations) -> ET.Element:
+    def _insert_ref_ann_times(root, annotations) -> None:
         """Assigns time boundaries to referring annotations."""
 
         for ann in annotations:
@@ -179,8 +343,6 @@ class Annotation:
                         ref.set("TIME_SLOT_REF2", ref_time)
 
                     Annotation._insert_ref_ann_times(root, ref_anns)
-
-        return root
 
     @staticmethod
     def _get_tiers(root) -> list:
@@ -203,7 +365,7 @@ class Annotation:
         return tiers
 
     @staticmethod
-    def _insert_topics(root) -> ET.Element:
+    def _insert_topics(root) -> None:
         """Sets sections' topics to descriptions in .trs file root."""
 
         if root.find('Topics'):
@@ -212,10 +374,8 @@ class Annotation:
                     if sect.get('topic') == topic.get('id'):
                         sect.set('topic', topic.get('desc'))
 
-        return root
-
     @staticmethod
-    def _insert_speakers(root) -> ET.Element:
+    def _insert_speakers(root) -> None:
         """Sets turns' speakers to names in .trs file root."""
 
         if root.find('Speakers'):    
@@ -228,8 +388,6 @@ class Annotation:
                             turn.get('speaker').replace(spk.get('id'),
                                                         spk.get('name'))
                         )
-
-        return root
 
     @staticmethod
     def _get_sections(root) -> list:
@@ -290,7 +448,7 @@ class Annotation:
                 transcription[-1].text += f" {text}"
                 start = float(el.get('time'))
                 end = 0.0
-                text = el.get('type') if el.get('level') == 'off' else ''
+                text = '' if el.get('level') == 'off' else el.get('type')
                 background.append(Interval(start, end, text))
 
             elif el.tag == 'Event':
@@ -306,7 +464,8 @@ class Annotation:
                 if el.get('extent') == 'previous':
                     transcription[-1].text += f" +[{desc}] {text}"
 
-        # if base interval text was empty & formatted str was appended:
+        # if the initial interval text was empty and a formatted string
+        # with leading space was appended
         for interval in transcription:
             interval.text = interval.text.strip()
 
@@ -316,80 +475,478 @@ class Annotation:
     def _set_ends(intervals, duration) -> None:
         """Sets ends for intervals."""
 
-        i = 0
-        while i < len(intervals) - 1:
+        for i in range(len(intervals)-1):
             intervals[i].end = intervals[i+1].start
-            i += 1
+
         if intervals: intervals[i].end = duration
 
-        return
+    def to_tg(self) -> str:
+        "Returns a string representing Annotation to be written into .TextGrid"
 
+        for tier in self:
+            if not tier.is_point:
+                tier.fill_gaps(self.duration)
 
-class Converter:
-    """Represents AnnCo interface."""
-    
-    RE_TXT = re.compile(r'\.textgrid$', re.I)
-    RE_XML = re.compile(r'\.(eaf|trs)$', re.I)
-    ENCOD_MSG = ("Кодування обраного файлу не підтримується. Будь ласка, "
-                 "збережіть файл у кодуванні UTF-8 або оберіть інший.")
-
-    def __init__(self):
-        self.ann_file = None
-        self.file_name = None
-        self.file_format = None
-
-    def open_file(self):
-        """Opens annotation file and returns its contents."""
-
-        file_path = askopenfilename(
-            title='Оберіть вхідний файл',
-            filetypes=[
-                ('Файли Praat', '*.TextGrid'),
-                ('Файли Elan', '*.eaf'),
-                ('Файли Transcriber', '*.trs')
-            ]
+        tg_ann = (
+            "File type = \"ooTextFile\"\n"
+            "Object class = \"TextGrid\"\n\n"
+            f"xmin = {0}\n"
+            f"xmax = {self.duration}\n"
+            "tiers? <exists>\n"
+            f"size = {len(self)}\n"
+            "item []:\n"
         )
-        if not file_path:
-            return
 
-        self.file_name = re.search(r'[^/]+$', file_path).group(0)
+        for t, tier in enumerate(self, start=1):
+            tg_ann += tier.to_tg(t, self.duration)
 
-        if self.RE_TXT.search(self.file_name):
-            self.file_format = 'txt'
-        elif self.RE_XML.search(self.file_name):
-            self.file_format = 'xml'
+        return tg_ann
 
-        # lbl_name['text'] = file_name
+    def to_eaf(self) -> ET.ElementTree:
+        "Returns an Element Tree representing Annotation to be written into .eaf"
 
-        with open(file_path, encoding='UTF-8') as ann_file:
-            try:
-                if self.file_format == 'txt':
-                    contents = ann_file.read()
-                elif self.file_format == 'xml':
-                    contents = ET.parse(ann_file)
-                return contents
-            except UnicodeDecodeError:
-                messagebox.showerror(title="Ой!", message=self.ENCOD_MSG)
-                return
+        # if include point intervals checkbutton is toggled
+        if interface.body.output_frame.incl_point_var.get():
+            for tier in self:
+                if tier.is_point:
+                    tier.extend_points(self.duration)
+        else:
+            self.tiers = [tier for tier in self if not tier.is_point]
+ 
+        ann_doc = self._eaf_root()
+        ann_tree = ET.ElementTree(ann_doc)
 
-    def test_convert(self, ext):
-        """Test function to check Annotation alternative constructors."""
+        self._eaf_header(ann_doc)
+        self._time_slots(ann_doc, self._time_values())
+        for tier in self: tier.to_eaf(ann_doc)
+        self._time_slot_refs(ann_doc)
 
-        contents = self.open_file()
+        self._default_lt(ann_doc)
+        self._time_sub(ann_doc)
+        self._symb_sub(ann_doc)
+        self._symb_assoc(ann_doc)
+        self._incl_in(ann_doc)
 
-        if ext == 'tg':
-            ann = Annotation.from_tg(contents)
-        elif ext == 'eaf':
-            ann = Annotation.from_eaf(contents)
-        elif ext == 'trs':
-            ann = Annotation.from_trs(contents)
+        return ann_tree
 
-        print(ann)
+    @staticmethod
+    def _eaf_root() -> ET.Element:
+        "Returns root ANNOTATION_DOCUMENT element for .eaf tree"
+
+        root = ET.Element(
+            'ANNOTATION_DOCUMENT',
+            {'AUTHOR': '', 'FORMAT': '3.0', 'VERSION': '3.0',
+            'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+            'xsi:noNamespaceSchemaLocation': 'http://www.mpi.nl/tools/elan/EAFv3.0.xsd'}
+        )
+
+        return root
+
+    @staticmethod
+    def _eaf_header(root) -> None:
+        "Creates HEADER element in .eaf tree"
+
+        header = ET.SubElement(root, 'HEADER', {'MEDIA_FILE': '',
+                                                'TIME_UNITS': 'milliseconds'}
+        )
+
+        urn = ET.SubElement(header, 'PROPERTY', {'NAME': 'URN'})
+        last_ann = ET.SubElement(header, 'PROPERTY', {'NAME': 'lastUsedAnnotationId'})
+
+        urn.text = 'urn:nl-mpi-tools-elan-eaf:187f732a-340c-4c9e-a8c3-307ba38799fb'
+        last_ann.text = '0'
+
+    def _time_values(self) -> list:
+        "Returns a list of time values of all annotation intervals."
+
+        time_values = []
+
+        # if include empty intervals checkbutton is toggled
+        if interface.body.output_frame.incl_empty_var.get():
+            for tier in self:
+                for interval in tier:
+                    time_values.append(interval.eaf_start)
+                    time_values.append(interval.eaf_end)
+        else:
+            for tier in self:
+                for interval in tier:
+                    if not interval.text:
+                        continue
+                    time_values.append(interval.eaf_start)
+                    time_values.append(interval.eaf_end)
+        
+        time_values.sort()
+
+        return time_values
+
+    @staticmethod
+    def _time_slots(root, time_values) -> None:
+        "Creates TIME_ORDER and TIME_SLOT elements in .eaf tree from time values"
+
+        time_order = ET.SubElement(root, 'TIME_ORDER')
+
+        for i, tv in enumerate(time_values, start=1):
+            ET.SubElement(time_order, 'TIME_SLOT', {'TIME_SLOT_ID' : 'ts' + str(i),
+                                                    'TIME_VALUE': str(tv)}
+            )
+
+    @staticmethod
+    def _time_slot_refs(root) -> None:
+        "Replaces TIME_SLOT_REF1/2 attribute values with references"
+
+        for ann in root.iter('ALIGNABLE_ANNOTATION'):
+            for ts in root.find('TIME_ORDER'):
+
+                if ann.get('TIME_SLOT_REF1') == ts.get('TIME_VALUE'):
+                    ann.set('TIME_SLOT_REF1', ts.get('TIME_SLOT_ID'))
+
+                if ann.get('TIME_SLOT_REF2') == ts.get('TIME_VALUE'):
+                    ann.set('TIME_SLOT_REF2', ts.get('TIME_SLOT_ID'))
+
+    @staticmethod
+    def _default_lt(root) -> None:
+        "Creates LINGUISTIC_TYPE element for default-lt type in .eaf tree"
+
+        ET.SubElement(root, 'LINGUISTIC_TYPE', {'GRAPHIC_REFERENCES': 'false',
+                                                'LINGUISTIC_TYPE_ID': 'default-lt',
+                                                'TIME_ALIGNABLE': 'true'}
+        )
+
+    @staticmethod
+    def _time_sub(root) -> None:
+        "Creates CONSTRAINT element for Time_Subdivision in .eaf tree"
+
+        DESC = (
+            "Time subdivision of parent annotation's time interval, no time "
+            "gaps allowed within this interval"
+        )
+
+        ET.SubElement(root, 'CONSTRAINT', {'DESCRIPTION': DESC,
+                                           'STEREOTYPE': 'Time_Subdivision'}
+        )
+
+    @staticmethod
+    def _symb_sub(root) -> None:
+        "Creates CONSTRAINT element for Symbolic_Subdivision in .eaf tree"
+
+        DESC = (
+            "Symbolic subdivision of a parent annotation. "
+            "Annotations refering to the same parent are ordered"
+        )
+
+        ET.SubElement(root, 'CONSTRAINT', {'DESCRIPTION': DESC,
+                                           'STEREOTYPE': 'Symbolic_Subdivision'}
+        )
+
+    @staticmethod
+    def _symb_assoc(root) -> None:
+        "Creates CONSTRAINT element for Symbolic_Association in .eaf tree"
+
+        DESC = "1-1 association with a parent annotation"
+
+        ET.SubElement(root, 'CONSTRAINT', {'DESCRIPTION': DESC,
+                                           'STEREOTYPE': 'Symbolic_Association'}
+        )
+
+    @staticmethod
+    def _incl_in(root) -> None:
+        "Creates CONSTRAINT element for Included_In in .eaf tree"
+
+        DESC = (
+            "Time alignable annotations within the parent annotation's "
+            "time interval, gaps are allowed"
+        )
+
+        ET.SubElement(root, 'CONSTRAINT', {'DESCRIPTION': DESC,
+                                           'STEREOTYPE': 'Included_In'}
+        )
+
+
+class InputFrame(ttk.Labelframe):
+    "Labelframe containing"
+
+    RE_NAME = re.compile(r'[^/]+$')
+    RE_TXT = re.compile(r'\.(textgrid|txt)$', re.I)
+    RE_XML = re.compile(r'\.(eaf|trs)$', re.I)
+    ENCOD_MSG = ("Кодування файлу(ів) {} не підтримується. Будь ласка, "
+                 "збережіть файл(и) у кодуванні UTF-8 та спробуйте ще раз.")
+
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+
+        self.names, self.contents = [], []
+        self.names_var = tk.StringVar(self, value=self.names)
+        self.lb_files = tk.Listbox(self, height=10, width=40, activestyle='none',
+                                   listvariable=self.names_var)
+        self.lb_files.bind('<<ListboxSelect>>', self.btn_remove_state)
+
+        self.sb_files = ttk.Scrollbar(self, orient=tk.VERTICAL,
+                                      command=self.lb_files.yview)
+        self.lb_files['yscrollcommand'] = self.sb_files.set
+
+        self.btn_select = ttk.Button(self, text="Обрати файли", width=14,
+                                     command=self.select_files)
+
+        self.btn_clear = ttk.Button(self, text="Очистити все", width=14,
+                                    command=self.clear_files)
+
+        self.btn_remove = ttk.Button(self, text="Видалити",
+                                     command=self.remove_files, width=14,
+                                     state='disabled')
+
+        self._layout()
+
+    def _layout(self) -> None:
+        "Lays widgets out"
+
+        self.lb_files.pack(side=tk.LEFT)
+        self.sb_files.pack(side=tk.LEFT, fill=tk.Y)
+        self.btn_select.pack(padx=10)
+        self.btn_clear.pack(padx=10, pady=3)
+        self.btn_remove.pack(padx=10)
+    
+    def select_files(self) -> None:
+        "Extracts contents from user selected files and updates file names"
+
+        paths = self._get_paths()
+        names = self._get_names(paths)
+        formats = self._get_formats(names)
+        names, contents = self._read_files(paths, names, formats)
+        self.names.extend(names)
+        self.contents.extend(contents)
+        self.names_var.set(self.names)
+
+    def clear_files(self) -> None:
+        "Clear all contents and names of all files"
+
+        self.contents.clear()
+        self.names.clear()
+        self.names_var.set(self.names)
+        self.btn_remove.state(['disabled'])
+
+    def remove_files(self) -> None:
+        "Remove contents and names of the selected file in lb_files"
+
+        i = self.lb_files.curselection()[0]
+        if i == len(self.names) - 1:
+            self.btn_remove.state(['disabled'])
+        del self.contents[i], self.names[i]
+        self.names_var.set(self.names)
+
+    def btn_remove_state(self, *args) -> None:
+        "Changes state of file remove button"
+
+        if self.names: self.btn_remove.state(['!disabled'])
+
+    @staticmethod
+    def _get_paths() -> list:
+        "Returns a list of strings representing paths for user-selected files"
+
+        paths = askopenfilenames(
+            title='Оберіть вхідний(і) файл(и) у кодуванні UTF-8',
+            filetypes=[('Файли Praat', '*.TextGrid'),
+                       ('Файли Elan', '*.eaf'),
+                       ('Файли Transcriber', '*.trs')]
+        )
+
+        return paths
+
+    @staticmethod
+    def _get_names(paths) -> list:
+        "Returns a list of file names extracted from paths"
+
+        return [InputFrame.RE_NAME.search(path).group() for path in paths]
+
+    @staticmethod
+    def _get_formats(names) -> list:
+        "Returns a list of file formats extracted from names"
+
+        formats = []
+
+        for name in names:
+            if InputFrame.RE_TXT.search(name):
+                formats.append('txt')
+            elif InputFrame.RE_XML.search(name):
+                formats.append('xml')
+
+        return formats
+
+    @staticmethod
+    def _read_files(paths, names, formats):
+        contents = []
+        unsupported = []
+
+        for p, n, f in zip(paths, names, formats):
+            with open(p, encoding='UTF-8') as inp_file:
+                try:
+                    if f == 'txt':
+                        contents.append(inp_file.read())
+                    elif f == 'xml':
+                        contents.append(ET.parse(inp_file))
+                except UnicodeDecodeError:
+                    unsupported.append(n)
+        
+        for u in unsupported: names.remove(u)
+
+        if unsupported:
+            messagebox.showerror(
+                title="Кодування не підтримується",
+                message=InputFrame.ENCOD_MSG.format(', '.join(unsupported))
+            )
+
+        return names, contents
+
+
+class OutputFrame(ttk.Labelframe):
+
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+
+        self.format_var = tk.IntVar(self)
+        self.rb_tg = ttk.Radiobutton(self, text=".TextGrid (Praat)", value=1,
+                                     variable=self.format_var,
+                                     command=self.eaf_cb_state)
+        self.rb_eaf = ttk.Radiobutton(self, text=".eaf (Elan)", value=2,
+                                      variable=self.format_var,
+                                      command=self.eaf_cb_state)
+
+        self.incl_empty_var = tk.BooleanVar(self)
+        self.cb_incl_empty = ttk.Checkbutton(self, variable=self.incl_empty_var,
+                                             offvalue=0, onvalue=1, state='disabled',
+                                             text="Порожні інтервали")
+
+        self.incl_point_var = tk.BooleanVar(self)
+        self.cb_incl_point = ttk.Checkbutton(self, variable=self.incl_point_var,
+                                             offvalue=0, onvalue=1, state='disabled',
+                                             text="Точкові рівні") 
+
+        self._layout()
+
+    def eaf_cb_state(self) -> None:
+        "Changes state of checkbuttons for .eaf output format"
+        
+        if self.format_var.get() == 1:
+            self.cb_incl_empty.config(state='disabled')
+            self.cb_incl_point.config(state='disabled')
+        elif self.format_var.get() == 2:
+            self.cb_incl_empty.config(state='active')
+            self.cb_incl_point.config(state='active')
+
+    def _layout(self) -> None:
+
+        self.rb_tg.grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        self.rb_eaf.grid(row=1, column=0, sticky='w', padx=5, pady=2)
+        self.cb_incl_empty.grid(row=1, column=1, sticky='w', padx=5)
+        self.cb_incl_point.grid(row=1, column=2, sticky='w', padx=5)
+
+    
+class ConvertFrame(tk.Frame):
+
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+
+        self.btn_convert = ttk.Button(self, default='active', width=18,
+                                      command=self.convert,
+                                      text="Конвертувати все")
+
+        # self.maximum = float(len(self.master.input_frame.names))
+        # self.pb_convert = ttk.Progressbar(self, orient=tk.HORIZONTAL,
+        #                                   length=261, mode='determinate',
+        #                                   value=0.0, maximum=self.maximum)
+
+        self._layout()
+
+    def convert(self) -> None:
+        "Converts, duh"
+
+        names = self.master.input_frame.names
+        contents = self.master.input_frame.contents
+        sel_fmt = self.master.output_frame.format_var.get()
+
+        if names and sel_fmt:
+            for name, contents in zip(names, contents):
+
+                if name.lower().endswith('.textgrid'):
+                    ann = Annotation.from_tg(contents)
+                elif name.lower().endswith('.eaf'):
+                    ann = Annotation.from_eaf(contents)
+                elif name.lower().endswith('.trs'):
+                    ann = Annotation.from_trs(contents)
+
+                if sel_fmt == 1:
+                    save_path = asksaveasfilename(
+                        title="Збережіть результат конвертації " + name,
+                        defaultextension="TextGrid",
+                        filetypes=[("Файли Praat", "*.TextGrid")],
+                    )
+                elif sel_fmt == 2:
+                    save_path = asksaveasfilename(
+                        title="Збережіть результат конвертації " + name,
+                        defaultextension="eaf",
+                        filetypes=[("Файли Elan", "*.eaf")]
+                    )
+
+                if save_path.endswith(".TextGrid"):
+                    with open(save_path, 'w', encoding='UTF-8') as sf:
+                        sf.write(ann.to_tg())
+                elif save_path.endswith(".eaf"):
+                    ann.to_eaf().write(save_path, 'UTF-8', xml_declaration=True)
+
+            # self.pb_convert.step()
+            messagebox.showinfo(title="Готово!", message="Готово!")
+
+        elif not names and sel_fmt:
+            messagebox.showerror(
+                title="Чогось не вистачає...",
+                message="Оберіть вхідний(і) файл(и)."
+            )
+
+        elif names and not sel_fmt:
+            messagebox.showerror(
+                title="Чогось не вистачає...",
+                message="Оберіть кінцевий формат."
+            )
+
+        else:
+            messagebox.showerror(
+                title="Чогось не вистачає...",
+                message="Оберіть вхідний(і) файл(и) та кінцевий формат."
+            )
+
+    def _layout(self):
+        "Lays out"
+
+        self.btn_convert.grid(row=0, column=1, sticky='e')
+        self.btn_convert.pack()
+        # self.pb_convert.grid(row=0, column=1, sticky='e', padx=5)
+
+
+class Body(tk.Frame):
+
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        self.input_frame = InputFrame(self, text="Вхідні файли",
+                                      padding=5)
+        self.output_frame = OutputFrame(self, text="Кінцевий формат",
+                                        padding=12)
+        self.convert_frame = ConvertFrame(self)
+
+        self.input_frame.pack()
+        self.output_frame.pack(pady=15)
+        self.convert_frame.pack(side=tk.RIGHT)
+
+
+class Interface(tk.Tk):
+    """Represents AnnCo interface."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.title("AnnCo v2.0")
+        self.body = Body(self, padx=15, pady=15)
+
+        self.body.pack()
 
 
 if __name__ == '__main__':
-
-    annco = Converter()
-    annco.test_convert('tg')
-    annco.test_convert('eaf')
-    annco.test_convert('trs')
+    interface = Interface()
+    interface.mainloop()

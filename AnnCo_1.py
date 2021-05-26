@@ -25,7 +25,7 @@ class Interval:
 class Tier:
     def __init__(self, name, ival_list):
         self.name = name
-        self.ivals = ival_list
+        self.intervals = ival_list
 
 
 def open_file():
@@ -112,8 +112,8 @@ def tg_to_obj(tg_file):
         tier_name = re.findall(tier_re, tier)
         del starts[0], ends[0]
         ival_tups = zip(starts, ends, texts)
-        tier_ivals = [Interval(start, end, text) for (start, end, text) in ival_tups]
-        tier_objs.append(Tier(tier_name[0], tier_ivals))
+        tier_intervals = [Interval(start, end, text) for (start, end, text) in ival_tups]
+        tier_objs.append(Tier(tier_name[0], tier_intervals))
 
     return tier_objs, tg_end
 
@@ -176,16 +176,16 @@ def eaf_to_obj(eaf_file):
 
     tier_objs = []
     for tier in ann_doc.findall("TIER"):
-        tier_ivals = []
+        tier_intervals = []
         for ann in tier.findall("ANNOTATION/*"):
-            tier_ivals.append(
+            tier_intervals.append(
                 Interval(
                     ann.get("TIME_SLOT_REF1"),
                     ann.get("TIME_SLOT_REF2"),
                     ann.find("*").text
                 )
             )
-        tier_objs.append(Tier(tier.get("TIER_ID"), tier_ivals))
+        tier_objs.append(Tier(tier.get("TIER_ID"), tier_intervals))
     
     return tier_objs, duration
 
@@ -224,7 +224,7 @@ def trs_to_obj(trs_file):
 
     for section in trans.find('Episode'):
         if section.get('topic'):
-            tier_objs[0].ivals.append(
+            tier_objs[0].intervals.append(
                 Interval(
                     section.get('startTime'),
                     section.get('endTime'),
@@ -232,7 +232,7 @@ def trs_to_obj(trs_file):
                 )
             )
         else:
-            tier_objs[0].ivals.append(
+            tier_objs[0].intervals.append(
                 Interval(
                     section.get('startTime'),
                     section.get('endTime'),
@@ -242,7 +242,7 @@ def trs_to_obj(trs_file):
 
         for turn in section:
             if turn.get('speaker'):
-                tier_objs[1].ivals.append(
+                tier_objs[1].intervals.append(
                     Interval(
                         turn.get('startTime'),
                         turn.get('endTime'),
@@ -250,7 +250,7 @@ def trs_to_obj(trs_file):
                     )
                 )
             else:
-                tier_objs[1].ivals.append(
+                tier_objs[1].intervals.append(
                     Interval(
                         turn.get('startTime'),
                         turn.get('endTime'),
@@ -260,59 +260,59 @@ def trs_to_obj(trs_file):
 
             for el in turn:
                 if el.tag == 'Sync':
-                    tier_objs[2].ivals.append(
+                    tier_objs[2].intervals.append(
                         Interval(el.get('time'), '0', el.tail.strip())
                     )
 
                 elif el.tag == 'Who':
-                    tier_objs[2].ivals[-1].text \
+                    tier_objs[2].intervals[-1].text \
                     += f" {el.get('nb')}: {el.tail.strip()}"
 
                 elif el.tag == 'Comment':
-                    tier_objs[2].ivals[-1].text \
+                    tier_objs[2].intervals[-1].text \
                     += f" {{{el.get('desc')}}} {el.tail.strip()}"
 
                 elif el.tag == 'Background':
-                    tier_objs[2].ivals[-1].text += f" {el.tail.strip()}"
+                    tier_objs[2].intervals[-1].text += f" {el.tail.strip()}"
                     if el.get('level') == 'off':
-                        tier_objs[3].ivals.append(
+                        tier_objs[3].intervals.append(
                             Interval(el.get('time'), '0', '')
                         )
                     else:
-                        tier_objs[3].ivals.append(
+                        tier_objs[3].intervals.append(
                             Interval(el.get('time'), '0', el.get('type'))
                         )
 
                 elif el.tag == 'Event':
                     desc, tail = el.get('desc'), el.tail.strip()
                     if el.get('extent') == "instantaneous":
-                        tier_objs[2].ivals[-1].text += f" [{desc}] {tail}"
+                        tier_objs[2].intervals[-1].text += f" [{desc}] {tail}"
                     elif el.get('extent') == "begin":
-                        tier_objs[2].ivals[-1].text += f" [{desc}-] {tail}"
+                        tier_objs[2].intervals[-1].text += f" [{desc}-] {tail}"
                     elif el.get('extent') == "end":
-                        tier_objs[2].ivals[-1].text += f" [-{desc}] {tail}"
+                        tier_objs[2].intervals[-1].text += f" [-{desc}] {tail}"
                     elif el.get('extent') == "next":
-                        tier_objs[2].ivals[-1].text += f" [{desc}]+ {tail}"
+                        tier_objs[2].intervals[-1].text += f" [{desc}]+ {tail}"
                     elif el.get('extent') == "previous":
-                        tier_objs[2].ivals[-1].text += f" +[{desc}] {tail}"
-            tier_objs[2].ivals[-1].end = turn.get('endTime')
+                        tier_objs[2].intervals[-1].text += f" +[{desc}] {tail}"
+            tier_objs[2].intervals[-1].end = turn.get('endTime')
 
-    trans_end = float(tier_objs[0].ivals[-1].end)
+    trans_end = float(tier_objs[0].intervals[-1].end)
     
     count = 0
-    while count < len(tier_objs[2].ivals)-1:
-        tier_objs[2].ivals[count].end = tier_objs[2].ivals[count+1].start
+    while count < len(tier_objs[2].intervals)-1:
+        tier_objs[2].intervals[count].end = tier_objs[2].intervals[count+1].start
         count += 1
     
     if len(tier_objs) == 4:
         count = 0
-        while count < len(tier_objs[3].ivals)-1:
-            tier_objs[3].ivals[count].end = tier_objs[3].ivals[count+1].start
+        while count < len(tier_objs[3].intervals)-1:
+            tier_objs[3].intervals[count].end = tier_objs[3].intervals[count+1].start
             count += 1
-        tier_objs[3].ivals[-1].end = trans_end
+        tier_objs[3].intervals[-1].end = trans_end
 
     for tier in tier_objs:
-        for interval in tier.ivals:
+        for interval in tier.intervals:
             interval.start = float(interval.start)
             interval.end = float(interval.end)
             interval.text = interval.text.strip()
@@ -326,20 +326,20 @@ def obj_to_tg(tier_objs, length):
 
     for tier in tier_objs:
         count = 0
-        while count < len(tier.ivals)-1:
-            prev_end = tier.ivals[count].end
-            next_start = tier.ivals[count + 1].start
+        while count < len(tier.intervals)-1:
+            prev_end = tier.intervals[count].end
+            next_start = tier.intervals[count + 1].start
             if prev_end < next_start:
-                tier.ivals.insert(count+1, Interval(prev_end, next_start, ''))
+                tier.intervals.insert(count+1, Interval(prev_end, next_start, ''))
             count += 1
 
-        if not tier.ivals:
-            tier.ivals.append(Interval(tg_min, tg_max, ''))
+        if not tier.intervals:
+            tier.intervals.append(Interval(tg_min, tg_max, ''))
         else:
-            if tg_min != tier.ivals[0].start:
-                tier.ivals.insert(0, Interval(tg_min, tier.ivals[0].start, ''))
-            if tg_max != tier.ivals[-1].end:
-                tier.ivals.append(Interval(tier.ivals[-1].end, tg_max, ''))
+            if tg_min != tier.intervals[0].start:
+                tier.intervals.insert(0, Interval(tg_min, tier.intervals[0].start, ''))
+            if tg_max != tier.intervals[-1].end:
+                tier.intervals.append(Interval(tier.intervals[-1].end, tg_max, ''))
 
     filepath = asksaveasfilename(
         defaultextension='TextGrid',
@@ -369,11 +369,11 @@ def obj_to_tg(tier_objs, length):
             f'        name = "{tier.name}"\n'
             f'        xmin = {tg_min}\n'
             f'        xmax = {tg_max}\n'
-            f'        intervals: size = {len(tier.ivals)}\n'
+            f'        intervals: size = {len(tier.intervals)}\n'
         )
 
         ival_count = 0
-        for interval in tier.ivals:
+        for interval in tier.intervals:
             ival_count += 1
             if interval.text == None:
                 interval.text = ''
@@ -388,7 +388,7 @@ def obj_to_tg(tier_objs, length):
     messagebox.showinfo(title='Ура!', message='Файл збережено!')
 
 
-def obj_to_eaf(tier_objs):
+def obj_to_eaf(tier_objs, duration):
     ann_doc = ET.Element(
         'ANNOTATION_DOCUMENT',
         {'AUTHOR': '', 'FORMAT': '3.0', 'VERSION': '3.0',
@@ -411,16 +411,11 @@ def obj_to_eaf(tier_objs):
     time_order = ET.SubElement(ann_doc, 'TIME_ORDER')
     time_slots = []
     for tier in tier_objs:
-        if cvar.get():
-            for interval in tier.ivals:
-                time_slots.append(int(round(interval.start,3)*1000))
-                time_slots.append(int(round(interval.end,3)*1000))
-        else:
-            for interval in tier.ivals:
-                if not interval.text:
-                    continue
-                time_slots.append(int(round(interval.start,3)*1000))
-                time_slots.append(int(round(interval.end,3)*1000))
+        for interval in tier.intervals:
+            if not interval.text:
+                continue
+            time_slots.append(int(round(interval.start,3)*1000))
+            time_slots.append(int(round(interval.end,3)*1000))
 
     time_slots.sort()
     time_slot_count = 0
@@ -440,31 +435,18 @@ def obj_to_eaf(tier_objs):
             {'LINGUISTIC_TYPE_REF': 'default-lt', 'TIER_ID': tier.name}
         )
 
-        if cvar.get():
-            for interval in tier.ivals:
-                interval_count += 1
-                ann_el = ET.SubElement(
-                    ET.SubElement(tier_el, 'ANNOTATION'),
-                    'ALIGNABLE_ANNOTATION',
-                    {'ANNOTATION_ID': 'a'+str(interval_count),
-                     'TIME_SLOT_REF1': str(int(round(interval.start,3)*1000)),
-                     'TIME_SLOT_REF2': str(int(round(interval.end,3)*1000))}
-                )
-                ET.SubElement(ann_el, 'ANNOTATION_VALUE').text = interval.text
-
-        else:
-            for interval in tier.ivals:
-                if not interval.text:
-                    continue
-                interval_count += 1
-                ann_el = ET.SubElement(
-                    ET.SubElement(tier_el, 'ANNOTATION'),
-                    'ALIGNABLE_ANNOTATION',
-                    {'ANNOTATION_ID': 'a'+str(interval_count),
-                     'TIME_SLOT_REF1': str(int(round(interval.start,3)*1000)),
-                     'TIME_SLOT_REF2': str(int(round(interval.end,3)*1000))}
-                )
-                ET.SubElement(ann_el, 'ANNOTATION_VALUE').text = interval.text
+        for interval in tier.intervals:
+            if not interval.text:
+                continue
+            interval_count += 1
+            ann_el = ET.SubElement(
+                ET.SubElement(tier_el, 'ANNOTATION'),
+                'ALIGNABLE_ANNOTATION',
+                {'ANNOTATION_ID': 'a'+str(interval_count),
+                    'TIME_SLOT_REF1': str(int(round(interval.start,3)*1000)),
+                    'TIME_SLOT_REF2': str(int(round(interval.end,3)*1000))}
+            )
+            ET.SubElement(ann_el, 'ANNOTATION_VALUE').text = interval.text
 
     for slot in time_order:
         for ann in ann_doc.iter('ALIGNABLE_ANNOTATION'):
@@ -528,68 +510,70 @@ def obj_to_eaf(tier_objs):
     messagebox.showinfo(title='Ура!', message='Файл збережено!')
 
 
-window = tk.Tk()
-window.title('AnnCo v1.2')
-frm_body = tk.Frame(window)
+if __name__ == '__main__':
 
-lbl_open = tk.Label(
-    frm_body,
-    text="1. Оберіть файл .TextGrid, .eaf або .trs у кодуванні UTF-8:"
-)
-frm_source = tk.Frame(frm_body)
-btn_open = ttk.Button(frm_source, text="Обрати файл...", command=open_file)
-lbl_name = tk.Label(frm_source, text="")
+    window = tk.Tk()
+    window.title('AnnCo v1.2')
+    frm_body = tk.Frame(window)
 
-lbl_dest = tk.Label(frm_body, text="2. Оберіть кінцевий формат:")
-frm_dest = tk.Frame(frm_body)
-out_format = tk.IntVar(frm_dest)
-rad_tg = ttk.Radiobutton(
-    frm_dest,
-    text=".TextGrid",
-    value=1,
-    variable=out_format,
-    command=incl_empty
-)
-rad_eaf = ttk.Radiobutton(
-    frm_dest,
-    text=".eaf",
-    value=2,
-    variable=out_format,
-    command=incl_empty
-)
+    lbl_open = tk.Label(
+        frm_body,
+        text="1. Оберіть файл .TextGrid, .eaf або .trs у кодуванні UTF-8:"
+    )
+    frm_source = tk.Frame(frm_body)
+    btn_open = ttk.Button(frm_source, text="Обрати файл...", command=open_file)
+    lbl_name = tk.Label(frm_source, text="")
 
-cvar = tk.BooleanVar(frm_dest)
-chk_empty = ttk.Checkbutton(
-    frm_dest,
-    text="Включити порожні інтервали до анотації",
-    variable=cvar,
-    onvalue=1,
-    offvalue=0,
-    state='disabled'
-)
+    lbl_dest = tk.Label(frm_body, text="2. Оберіть кінцевий формат:")
+    frm_dest = tk.Frame(frm_body)
+    out_format = tk.IntVar(frm_dest)
+    rad_tg = ttk.Radiobutton(
+        frm_dest,
+        text=".TextGrid",
+        value=1,
+        variable=out_format,
+        command=incl_empty
+    )
+    rad_eaf = ttk.Radiobutton(
+        frm_dest,
+        text=".eaf",
+        value=2,
+        variable=out_format,
+        command=incl_empty
+    )
 
-btn_convert = ttk.Button(
-    window,
-    text="Конвертувати",
-    command=convert,
-    default='active'
-)
+    cvar = tk.BooleanVar(frm_dest)
+    chk_empty = ttk.Checkbutton(
+        frm_dest,
+        text="Включити порожні інтервали до анотації",
+        variable=cvar,
+        onvalue=1,
+        offvalue=0,
+        state='disabled'
+    )
 
-frm_body.columnconfigure(0, minsize=500)
+    btn_convert = ttk.Button(
+        window,
+        text="Конвертувати",
+        command=convert,
+        default='active'
+    )
 
-lbl_open.grid(row=0, column=0, sticky='w', padx=10, pady=10)
-btn_open.grid(row=0, column=0, ipadx=7, padx=3)
-lbl_name.grid(row=0, column=1, sticky='w')
-frm_source.grid(row=1, column=0, sticky='ew', padx=10)
+    frm_body.columnconfigure(0, minsize=500)
 
-lbl_dest.grid(row=2, column=0, sticky='w', padx=10, pady=10)
-rad_tg.grid(row=0, column=0, sticky='w')
-rad_eaf.grid(row=1, column=0, sticky='w', pady=5)
-chk_empty.grid(row=1, column=1, padx=10)
-frm_dest.grid(row=3, column=0, sticky='ew', padx=10)
+    lbl_open.grid(row=0, column=0, sticky='w', padx=10, pady=10)
+    btn_open.grid(row=0, column=0, ipadx=7, padx=3)
+    lbl_name.grid(row=0, column=1, sticky='w')
+    frm_source.grid(row=1, column=0, sticky='ew', padx=10)
 
-frm_body.pack()
+    lbl_dest.grid(row=2, column=0, sticky='w', padx=10, pady=10)
+    rad_tg.grid(row=0, column=0, sticky='w')
+    rad_eaf.grid(row=1, column=0, sticky='w', pady=5)
+    chk_empty.grid(row=1, column=1, padx=10)
+    frm_dest.grid(row=3, column=0, sticky='ew', padx=10)
 
-btn_convert.pack(side=tk.RIGHT, padx=10, pady=10, ipadx=5)
+    frm_body.pack()
 
-window.mainloop()
+    btn_convert.pack(side=tk.RIGHT, padx=10, pady=10, ipadx=5)
+
+    window.mainloop()

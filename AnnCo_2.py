@@ -2,7 +2,6 @@ import re
 import wave
 import xml.etree.ElementTree as ET
 import tkinter as tk
-import tests
 
 from tkinter import ttk, messagebox
 from tkinter.filedialog import askopenfilenames, asksaveasfilename

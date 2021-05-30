@@ -1,6 +1,6 @@
 # Ideas for AnnCo 2.0
 
-***
+Currently AnnCo supports Praat (.TextGrid), Elan (.eaf) and Transcriber (.trs) 
 
 ## Refactoring
 - Compile TextGrid search patterns.
@@ -15,11 +15,9 @@
 
 # 25.05.2021 Commit
 
-***
-
 ## Support for Praat point tiers
 - Tier objects now have is_point attribute of bool type defining if tier is a point tier. Default is False.
 - Interval objects are considered points if their start and end attributes contain the same value.
-- to_tg() method of Interval class now checks if instance is a point and returns according string representation for TextGrid
-- to_tg() method of Tier class now checks if Tier instance is a point tier and and returns according string representation for TextGrid. Additionaly as `end` argument it accepts Annotation duration.
+- `to_tg()` method of Interval class now checks if instance is a point and returns according string representation for TextGrid
+- `to_tg()` method of Tier class now checks if Tier instance is a point tier and and returns according string representation for TextGrid. Additionaly as `end` argument it accepts Annotation duration.
 - Added point tier checkbutton to interface

@@ -1,5 +1,6 @@
-AnnCo.code-workspace
 __pycache__
-settings.json
+.vscode
+AnnCo_1.py
 Legacy.py
 Ideas.md
+tests.py

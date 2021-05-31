@@ -1,3 +1,5 @@
+# For license, see LICENSE.txt
+
 import re
 import wave
 import xml.etree.ElementTree as ET

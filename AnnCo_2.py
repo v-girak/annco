@@ -288,6 +288,66 @@ class Annotation:
 
         return cls(tiers, duration)
 
+    @classmethod
+    def from_antx(cls, contents):
+        """Creates Annotation instance from .antx file contents."""
+
+        ann = contents.getroot()
+        namespace = {'ns': 'http://tempuri.org/AnnotationSystemDataSet.xsd'}
+        samplerate = cls._get_samplerate(ann, namespace)
+        layers, max_end = cls._get_layers(ann, namespace, samplerate)
+        duration = cls._get_duration_antx(max_end)
+
+        return cls(layers, duration)
+
+    @staticmethod
+    def _get_samplerate(root, namespace: dict) -> int:
+        """Extracts sample rate from .antx file root"""
+
+        value = root.find(".//*[ns:Key='Samplerate']/ns:Value", namespace)
+        samplerate = int(value.text)
+
+        return samplerate
+
+    @staticmethod
+    def _get_layers(root, namespace: dict, samplerate: int) -> list:
+        """Return list of Tier objects and their Intervals from .antx root."""
+
+        max_end = 0  # used to determine duration of annotation
+
+        layers = []
+        for layer in root.findall('ns:Layer', namespace):
+            layer_id = layer.find('ns:Id', namespace).text
+            name = layer.find('ns:Name', namespace).text
+            segments = []
+
+            for seg in root.findall(f".//*[ns:IdLayer='{layer_id}']", namespace):
+                samp_start = float(seg.find('ns:Start', namespace).text)
+                samp_duration = float(seg.find('ns:Duration', namespace).text)
+                text = seg.find('ns:Label', namespace).text
+
+                samp_end = samp_start + samp_duration
+                start = samp_start / samplerate
+                end = samp_end / samplerate
+
+                if not max_end or end > max_end:
+                    max_end = end
+
+                segments.append(Interval(start, end, text))
+
+            layers.append(Tier(name, segments))
+
+        return layers, max_end
+
+    @staticmethod
+    def _get_duration_antx(max_end: float) -> float:
+        """Gets annotation duration from .antx file root."""
+
+        if max_end > 15.0:
+            return max_end
+        else:
+            return 15.0
+
     @staticmethod
     def _get_duration(root) -> float:
         """Gets annotation duration from .eaf file root.
@@ -668,7 +728,7 @@ class InputFrame(ttk.Labelframe):
 
     RE_NAME = re.compile(r'[^/]+$')
     RE_TXT = re.compile(r'\.(textgrid|txt)$', re.I)
-    RE_XML = re.compile(r'\.(eaf|trs)$', re.I)
+    RE_XML = re.compile(r'\.(eaf|trs|antx)$', re.I)
     ENCOD_MSG = ("Кодування файлу(ів) {} не підтримується. Будь ласка, "
                  "збережіть файл(и) у кодуванні UTF-8 та спробуйте ще раз.")
 
@@ -747,7 +807,8 @@ class InputFrame(ttk.Labelframe):
             title='Оберіть вхідний(і) файл(и) у кодуванні UTF-8',
             filetypes=[('Файли Praat', '*.TextGrid'),
                        ('Файли Elan', '*.eaf'),
-                       ('Файли Transcriber', '*.trs')]
+                       ('Файли Transcriber', '*.trs'),
+                       ('Файли Annotation Pro', '*.antx')]
         )
 
         return paths
@@ -868,6 +929,8 @@ class ConvertFrame(tk.Frame):
                     ann = Annotation.from_eaf(contents)
                 elif name.lower().endswith('.trs'):
                     ann = Annotation.from_trs(contents)
+                elif name.lower().endswith('.antx'):
+                    ann = Annotation.from_antx(contents)
 
                 if sel_fmt == 1:
                     save_path = asksaveasfilename(

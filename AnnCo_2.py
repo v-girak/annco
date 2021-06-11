@@ -2,6 +2,7 @@
 
 import re
 import wave
+import random
 import xml.etree.ElementTree as ET
 import tkinter as tk
 
@@ -41,6 +42,18 @@ class Interval:
 
         return int(round(self.end, 3) * 1000)
 
+    @property
+    def antx_start(self) -> str:
+        """Returns interval start value formatted for .antx"""
+
+        return str(self.start * 44100)
+    
+    @property
+    def antx_dur(self) -> str:
+        """Returns interval duration value formatted for .antx"""
+
+        return str(44100 * (self.end - self.start))
+
     def to_tg(self, i) -> str:
         "Returns a string representing interval in .TextGrid file"
 
@@ -72,6 +85,55 @@ class Interval:
 
         ET.SubElement(align_ann, 'ANNOTATION_VALUE').text = self.text
 
+    def to_antx(self, root, segment_id: str, layer_id: str) -> None:
+        """Creates Segment element representing interval in .antx file."""
+
+        segment = ET.SubElement(root, 'Segment')
+
+        id_el = ET.SubElement(segment, 'Id')
+        id_el.text = segment_id
+
+        layer_id_el = ET.SubElement(segment, 'IdLayer')
+        layer_id_el.text = layer_id
+
+        label = ET.SubElement(segment, 'Label')
+        label.text = self.text
+
+        fore_color = ET.SubElement(segment, 'ForeColor')
+        fore_color.text = '-16777216'
+
+        back_color = ET.SubElement(segment, 'BackColor')
+        back_color.text = '-1'
+
+        border_color = ET.SubElement(segment, 'BorderColor')
+        border_color.text = '-16777216'
+
+        start = ET.SubElement(segment, 'Start')
+        start.text = self.antx_start
+
+        duration = ET.SubElement(segment, 'Duration')
+        duration.text = self.antx_dur
+
+        is_sel = ET.SubElement(segment, 'IsSelected')
+        is_sel.text = 'false'
+
+        feat = ET.SubElement(segment, 'Feature')
+        lang = ET.SubElement(segment, 'Language')
+        group = ET.SubElement(segment, 'Group')
+        name = ET.SubElement(segment, 'Name')
+        param_1 = ET.SubElement(segment, 'Parameter1')
+        param_2 = ET.SubElement(segment, 'Parameter2')
+        param_3 = ET.SubElement(segment, 'Parameter3')
+
+        is_marker = ET.SubElement(segment, 'IsMarker')
+        is_marker.text = 'false'
+
+        marker = ET.SubElement(segment, 'Marker')
+        r_script = ET.SubElement(segment, 'RScript')
+
+        vid_off = ET.SubElement(segment, 'VideoOffset')
+        vid_off.text = '0'
+
 
 class Tier:
     """Represents annotation tier containing its intervals."""
@@ -83,6 +145,7 @@ class Tier:
         else:
             self.intervals = intervals
         self.is_point = is_point
+        self._antx_id = None
         self._index = 0
 
     def __repr__(self):
@@ -177,6 +240,75 @@ class Tier:
                 if not interval.text:
                     continue
                 interval.to_eaf(i, tier_el)
+
+    def to_antx(self, root, layer_id: str) -> None:
+        """Creates Layer element representing tier in .antx file."""
+
+        self._antx_id = layer_id
+        layer = ET.SubElement(root, 'Layer')
+
+        id_el = ET.SubElement(layer, 'Id')
+        id_el.text = layer_id
+
+        name = ET.SubElement(layer, 'Name')
+        name.text = self.name
+
+        forecolor = ET.SubElement(layer, 'ForeColor')
+        forecolor.text = '-16777216'
+
+        backcolor = ET.SubElement(layer, 'BackColor')
+        backcolor.text = '-1'
+
+        is_sel = ET.SubElement(layer, 'IsSelected')
+        is_sel.text = 'false'
+
+        height = ET.SubElement(layer, 'Height')
+        height.text = '70'
+
+        ccs = ET.SubElement(layer, 'CoordinateControlStyle')
+        ccs.text = '0'
+
+        is_locked = ET.SubElement(layer, 'IsLocked')
+        is_locked.text = 'false'
+
+        is_closed = ET.SubElement(layer, 'IsClosed')
+        is_closed.text = 'false'
+
+        sos = ET.SubElement(layer, 'ShowOnSpectrogram')
+        sos.text = 'false'
+
+        sac = ET.SubElement(layer, 'ShowAsChart')
+        sac.text = 'false'
+
+        chart_min = ET.SubElement(layer, 'ChartMinimum')
+        chart_min.text = '-50'
+
+        chart_max = ET.SubElement(layer, 'ChartMaximum')
+        chart_max.text = '50'
+
+        show_bounds = ET.SubElement(layer, 'ShowBoundaries')
+        show_bounds.text = 'true'
+
+        iif = ET.SubElement(layer, 'IncludeInFrequency')
+        iif.text = 'true'
+
+        param_1 = ET.SubElement(layer, 'Parameter1Name')
+        param_1.text = 'Parameter 1'
+
+        param_2 = ET.SubElement(layer, 'Parameter2Name')
+        param_2.text = 'Parameter 2'
+
+        param_3 = ET.SubElement(layer, 'Parameter3Name')
+        param_3.text = 'Parameter 3'
+
+        is_vis = ET.SubElement(layer, 'IsVisible')
+        is_vis.text = 'true'
+
+        font_size = ET.SubElement(layer, 'FontSize')
+        font_size.text = '10'
+
+        vpi = ET.SubElement(layer, 'VideoPlayerIndex')
+        vpi.text = '0'
 
 
 class Annotation:
@@ -299,54 +431,6 @@ class Annotation:
         duration = cls._get_duration_antx(max_end)
 
         return cls(layers, duration)
-
-    @staticmethod
-    def _get_samplerate(root, namespace: dict) -> int:
-        """Extracts sample rate from .antx file root"""
-
-        value = root.find(".//*[ns:Key='Samplerate']/ns:Value", namespace)
-        samplerate = int(value.text)
-
-        return samplerate
-
-    @staticmethod
-    def _get_layers(root, namespace: dict, samplerate: int) -> list:
-        """Return list of Tier objects and their Intervals from .antx root."""
-
-        max_end = 0  # used to determine duration of annotation
-
-        layers = []
-        for layer in root.findall('ns:Layer', namespace):
-            layer_id = layer.find('ns:Id', namespace).text
-            name = layer.find('ns:Name', namespace).text
-            segments = []
-
-            for seg in root.findall(f".//*[ns:IdLayer='{layer_id}']", namespace):
-                samp_start = float(seg.find('ns:Start', namespace).text)
-                samp_duration = float(seg.find('ns:Duration', namespace).text)
-                text = seg.find('ns:Label', namespace).text
-
-                samp_end = samp_start + samp_duration
-                start = samp_start / samplerate
-                end = samp_end / samplerate
-
-                if not max_end or end > max_end:
-                    max_end = end
-
-                segments.append(Interval(start, end, text))
-
-            layers.append(Tier(name, segments))
-
-        return layers, max_end
-
-    @staticmethod
-    def _get_duration_antx(max_end: float) -> float:
-        """Gets annotation duration from .antx file root."""
-
-        if max_end > 15.0:
-            return max_end
-        else:
-            return 15.0
 
     @staticmethod
     def _get_duration(root) -> float:
@@ -541,6 +625,54 @@ class Annotation:
 
         if intervals: intervals[i].end = duration
 
+    @staticmethod
+    def _get_samplerate(root, namespace: dict) -> int:
+        """Extracts sample rate from .antx file root"""
+
+        value = root.find(".//*[ns:Key='Samplerate']/ns:Value", namespace)
+        samplerate = int(value.text)
+
+        return samplerate
+
+    @staticmethod
+    def _get_layers(root, namespace: dict, samplerate: int) -> list:
+        """Return list of Tier objects and their Intervals from .antx root."""
+
+        max_end = 0  # used to determine duration of annotation
+
+        layers = []
+        for layer in root.findall('ns:Layer', namespace):
+            layer_id = layer.find('ns:Id', namespace).text
+            name = layer.find('ns:Name', namespace).text
+            segments = []
+
+            for seg in root.findall(f".//*[ns:IdLayer='{layer_id}']", namespace):
+                samp_start = float(seg.find('ns:Start', namespace).text)
+                samp_duration = float(seg.find('ns:Duration', namespace).text)
+                text = seg.find('ns:Label', namespace).text
+
+                samp_end = samp_start + samp_duration
+                start = samp_start / samplerate
+                end = samp_end / samplerate
+
+                if not max_end or end > max_end:
+                    max_end = end
+
+                segments.append(Interval(start, end, text))
+
+            layers.append(Tier(name, segments))
+
+        return layers, max_end
+
+    @staticmethod
+    def _get_duration_antx(max_end: float) -> float:
+        """Gets annotation duration from .antx file root."""
+
+        if max_end > 15.0:
+            return max_end
+        else:
+            return 15.0
+
     def to_tg(self) -> str:
         "Returns a string representing Annotation to be written into .TextGrid"
 
@@ -587,6 +719,39 @@ class Annotation:
         self._symb_sub(ann_doc)
         self._symb_assoc(ann_doc)
         self._incl_in(ann_doc)
+
+        return ann_tree
+
+    def to_antx(self) -> ET.ElementTree:
+        """Returns an Element Tree representing Annotation to be written into .antx"""
+
+        if interface.body.output_frame.incl_point_var.get():
+            for tier in self:
+                if tier.is_point:
+                    tier.extend_points(self.duration)
+        else:
+            self.tiers = [tier for tier in self if not tier.is_point]
+
+        namespace = {'ns': 'http://tempuri.org/AnnotationSystemDataSet.xsd'}
+
+        ann = self._antx_root()
+        ann_tree = ET.ElementTree(ann)
+
+        for tier in self:
+            tier.to_antx(ann, self._generate_id())
+
+        if interface.body.output_frame.incl_empty_var.get():
+            for tier in self:
+                for interval in tier:
+                    interval.to_antx(ann, self._generate_id(), tier._antx_id)
+        else:
+            for tier in self:
+                for interval in tier:
+                    if not interval.text:
+                        continue
+                    interval.to_antx(ann, self._generate_id(), tier._antx_id)
+
+        self._configs(ann)
 
         return ann_tree
 
@@ -722,6 +887,93 @@ class Annotation:
                                            'STEREOTYPE': 'Included_In'}
         )
 
+    @staticmethod
+    def _antx_root() -> ET.Element:
+        """Returns root AnnotationSystemDataSet element for .antx tree"""
+
+        root = ET.Element(
+            'AnnotationSystemDataSet',
+            {'xmlns': 'http://tempuri.org/AnnotationSystemDataSet.xsd'}
+        )
+
+        return root
+
+    @staticmethod
+    def _generate_id() -> str:
+        """Generates a unique id for .antx layer/segment."""
+
+        CHARS = '0123456789abcdef'
+
+        generated = (
+            ''.join(random.choices(CHARS, k=8)) + '-'
+            + ''.join(random.choices(CHARS, k=4)) + '-'
+            + ''.join(random.choices(CHARS, k=4)) + '-'
+            + ''.join(random.choices(CHARS, k=4)) + '-'
+            + ''.join(random.choices(CHARS, k=12))
+        )
+
+        return generated
+
+    @staticmethod
+    def _configs(root) -> None:
+        """Creates Configuration elements in .antx file tree."""
+
+        version = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(version, 'Key'); key.text = 'Version'
+        value = ET.SubElement(version, 'Value'); value.text = '5'
+
+        created = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(created, 'Key'); key.text = 'Created'
+        value = ET.SubElement(created, 'Value')
+
+        modified = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(modified, 'Key'); key.text = 'Modified'
+        value = ET.SubElement(modified, 'Value')
+
+        samplerate = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(samplerate, 'Key'); key.text = 'Samplerate'
+        value = ET.SubElement(samplerate, 'Value'); value.text = '44100'
+
+        file_vers = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(file_vers, 'Key'); key.text = 'FileVersion'
+        value = ET.SubElement(file_vers, 'Value'); value.text = '5'
+
+        author = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(author, 'Key'); key.text = 'Author'
+        value = ET.SubElement(author, 'Value')
+
+        title = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(title, 'Key'); key.text = 'ProjectTitle'
+        value = ET.SubElement(title, 'Value')
+
+        environ = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(environ, 'Key'); key.text = 'ProjectEnvironment'
+        value = ET.SubElement(environ, 'Value')
+
+        noises = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(noises, 'Key'); key.text = 'ProjectNoises'
+        value = ET.SubElement(noises, 'Value')
+
+        collect = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(collect, 'Key'); key.text = 'ProjectCollection'
+        value = ET.SubElement(collect, 'Value')
+
+        corpus_type = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(corpus_type, 'Key'); key.text = 'ProjectCorpusType'
+        value = ET.SubElement(corpus_type, 'Value')
+
+        corpus_own = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(corpus_own, 'Key'); key.text = 'ProjectCorpusOwner'
+        value = ET.SubElement(corpus_own, 'Value')
+
+        lic = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(lic, 'Key'); key.text = 'ProjectLicense'
+        value = ET.SubElement(lic, 'Value')
+
+        desc = ET.SubElement(root, 'Configuration')
+        key = ET.SubElement(desc, 'Key'); key.text = 'ProjectDescription'
+        value = ET.SubElement(desc, 'Value')
+
 
 class InputFrame(ttk.Labelframe):
     "Labelframe containing"
@@ -737,7 +989,7 @@ class InputFrame(ttk.Labelframe):
 
         self.names, self.contents = [], []
         self.names_var = tk.StringVar(self, value=self.names)
-        self.lb_files = tk.Listbox(self, height=10, width=40, activestyle='none',
+        self.lb_files = tk.Listbox(self, height=10, width=45, activestyle='none',
                                    listvariable=self.names_var)
         self.lb_files.bind('<<ListboxSelect>>', self.btn_remove_state)
 
@@ -867,10 +1119,13 @@ class OutputFrame(ttk.Labelframe):
         self.format_var = tk.IntVar(self)
         self.rb_tg = ttk.Radiobutton(self, text=".TextGrid (Praat)", value=1,
                                      variable=self.format_var,
-                                     command=self.eaf_cb_state)
+                                     command=self.cb_state)
         self.rb_eaf = ttk.Radiobutton(self, text=".eaf (Elan)", value=2,
                                       variable=self.format_var,
-                                      command=self.eaf_cb_state)
+                                      command=self.cb_state)
+        self.rb_antx = ttk.Radiobutton(self, text=".antx (Annotation Pro)", value=3,
+                                      variable=self.format_var,
+                                      command=self.cb_state)
 
         self.incl_empty_var = tk.BooleanVar(self)
         self.cb_incl_empty = ttk.Checkbutton(self, variable=self.incl_empty_var,
@@ -884,13 +1139,13 @@ class OutputFrame(ttk.Labelframe):
 
         self._layout()
 
-    def eaf_cb_state(self) -> None:
+    def cb_state(self) -> None:
         "Changes state of checkbuttons for .eaf output format"
         
         if self.format_var.get() == 1:
             self.cb_incl_empty.config(state='disabled')
             self.cb_incl_point.config(state='disabled')
-        elif self.format_var.get() == 2:
+        else:
             self.cb_incl_empty.config(state='active')
             self.cb_incl_point.config(state='active')
 
@@ -898,6 +1153,7 @@ class OutputFrame(ttk.Labelframe):
 
         self.rb_tg.grid(row=0, column=0, sticky='w', padx=5, pady=2)
         self.rb_eaf.grid(row=1, column=0, sticky='w', padx=5, pady=2)
+        self.rb_antx.grid(row=2, column=0, sticky='w', padx=5, pady=2)
         self.cb_incl_empty.grid(row=1, column=1, sticky='w', padx=5)
         self.cb_incl_point.grid(row=1, column=2, sticky='w', padx=5)
 
@@ -944,12 +1200,20 @@ class ConvertFrame(tk.Frame):
                         defaultextension="eaf",
                         filetypes=[("Файли Elan", "*.eaf")]
                     )
+                elif sel_fmt == 3:
+                    save_path = asksaveasfilename(
+                        title="Збережіть результат конвертації " + name,
+                        defaultextension="antx",
+                        filetypes=[("Файли Annotation Pro", "*.antx")]
+                    )
 
                 if save_path.endswith(".TextGrid"):
                     with open(save_path, 'w', encoding='UTF-8') as sf:
                         sf.write(ann.to_tg())
                 elif save_path.endswith(".eaf"):
                     ann.to_eaf().write(save_path, 'UTF-8', xml_declaration=True)
+                elif save_path.endswith(".antx"):
+                    ann.to_antx().write(save_path, 'UTF-8', xml_declaration=True)
 
             messagebox.showinfo(title="Готово!", message="Готово!")
 
@@ -983,7 +1247,7 @@ class Body(tk.Frame):
     def __init__(self, master, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
         self.input_frame = InputFrame(self, text="Вхідні файли",
-                                      padding=5)
+                                      padding=7)
         self.output_frame = OutputFrame(self, text="Кінцевий формат",
                                         padding=12)
         self.convert_frame = ConvertFrame(self)

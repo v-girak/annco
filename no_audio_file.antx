@@ -1,0 +1,104 @@
+<?xml version="1.0" standalone="yes"?>
+<AnnotationSystemDataSet xmlns="http://tempuri.org/AnnotationSystemDataSet.xsd">
+  <Layer>
+    <Id>eb84e9bb-a901-4386-b82d-56d495fc8ccc</Id>
+    <Name>Layer1</Name>
+    <ForeColor>-16777216</ForeColor>
+    <BackColor>-3281999</BackColor>
+    <IsSelected>true</IsSelected>
+    <Height>70</Height>
+    <CoordinateControlStyle>0</CoordinateControlStyle>
+    <IsLocked>false</IsLocked>
+    <IsClosed>false</IsClosed>
+    <ShowOnSpectrogram>false</ShowOnSpectrogram>
+    <ShowAsChart>false</ShowAsChart>
+    <ChartMinimum>-50</ChartMinimum>
+    <ChartMaximum>50</ChartMaximum>
+    <ShowBoundaries>true</ShowBoundaries>
+    <IncludeInFrequency>true</IncludeInFrequency>
+    <Parameter1Name>Parameter 1</Parameter1Name>
+    <Parameter2Name>Parameter 2</Parameter2Name>
+    <Parameter3Name>Parameter 3</Parameter3Name>
+    <IsVisible>true</IsVisible>
+    <FontSize>10</FontSize>
+    <VideoPlayerIndex>0</VideoPlayerIndex>
+  </Layer>
+  <Segment>
+    <Id>ce17eec7-18cd-4984-bf54-92f34e9dc61b</Id>
+    <IdLayer>eb84e9bb-a901-4386-b82d-56d495fc8ccc</IdLayer>
+    <Label>No audio file</Label>
+    <ForeColor>-16777216</ForeColor>
+    <BackColor>-1</BackColor>
+    <BorderColor>-16777216</BorderColor>
+    <Start>211812.390625</Start>
+    <Duration>267247.625</Duration>
+    <IsSelected>true</IsSelected>
+    <Feature />
+    <Language />
+    <Group />
+    <Name />
+    <Parameter1 />
+    <Parameter2 />
+    <Parameter3 />
+    <IsMarker>false</IsMarker>
+    <Marker />
+    <RScript />
+    <VideoOffset>0</VideoOffset>
+  </Segment>
+  <Configuration>
+    <Key>Version</Key>
+    <Value>5</Value>
+  </Configuration>
+  <Configuration>
+    <Key>Created</Key>
+    <Value>08.06.2021 19:51</Value>
+  </Configuration>
+  <Configuration>
+    <Key>Modified</Key>
+    <Value>08.06.2021 20:21</Value>
+  </Configuration>
+  <Configuration>
+    <Key>Samplerate</Key>
+    <Value>44100</Value>
+  </Configuration>
+  <Configuration>
+    <Key>FileVersion</Key>
+    <Value>5</Value>
+  </Configuration>
+  <Configuration>
+    <Key>Author</Key>
+    <Value />
+  </Configuration>
+  <Configuration>
+    <Key>ProjectTitle</Key>
+    <Value />
+  </Configuration>
+  <Configuration>
+    <Key>ProjectEnvironment</Key>
+    <Value />
+  </Configuration>
+  <Configuration>
+    <Key>ProjectNoises</Key>
+    <Value />
+  </Configuration>
+  <Configuration>
+    <Key>ProjectCollection</Key>
+    <Value />
+  </Configuration>
+  <Configuration>
+    <Key>ProjectCorpusType</Key>
+    <Value />
+  </Configuration>
+  <Configuration>
+    <Key>ProjectCorpusOwner</Key>
+    <Value />
+  </Configuration>
+  <Configuration>
+    <Key>ProjectLicense</Key>
+    <Value />
+  </Configuration>
+  <Configuration>
+    <Key>ProjectDescription</Key>
+    <Value />
+  </Configuration>
+</AnnotationSystemDataSet>

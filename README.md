@@ -9,4 +9,4 @@ AnnCo comes with a Graphical User Interface based on Python's buit-in tkinter li
 - Finally, you can convert all files to the selected format, which will prompt as Save File window.
 
 ## Copyright
-AnnCo come with MIT License. For more information, see For see LICENSE.txt.
+AnnCo comes with MIT License. For more information, see [LICENSE.txt](https://github.com/v-girak/annco/blob/d7c933939a1c90f9ced03f229e219ed110dfc53a/LICENSE.txt).

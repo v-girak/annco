@@ -2,10 +2,10 @@
 
 import re
 import wave
-import random
 import xml.etree.ElementTree as ET
 import tkinter as tk
 
+from random import choices
 from tkinter import ttk, messagebox
 from tkinter.filedialog import askopenfilenames, asksaveasfilename
 
@@ -732,7 +732,7 @@ class Annotation:
         else:
             self.tiers = [tier for tier in self if not tier.is_point]
 
-        namespace = {'ns': 'http://tempuri.org/AnnotationSystemDataSet.xsd'}
+        # namespace = {'ns': 'http://tempuri.org/AnnotationSystemDataSet.xsd'}
 
         ann = self._antx_root()
         ann_tree = ET.ElementTree(ann)
@@ -905,11 +905,11 @@ class Annotation:
         CHARS = '0123456789abcdef'
 
         generated = (
-            ''.join(random.choices(CHARS, k=8)) + '-'
-            + ''.join(random.choices(CHARS, k=4)) + '-'
-            + ''.join(random.choices(CHARS, k=4)) + '-'
-            + ''.join(random.choices(CHARS, k=4)) + '-'
-            + ''.join(random.choices(CHARS, k=12))
+            ''.join(choices(CHARS, k=8)) + '-'
+            + ''.join(choices(CHARS, k=4)) + '-'
+            + ''.join(choices(CHARS, k=4)) + '-'
+            + ''.join(choices(CHARS, k=4)) + '-'
+            + ''.join(choices(CHARS, k=12))
         )
 
         return generated
